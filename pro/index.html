@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Montana Child Support – Professional Intake Wizard</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <style>
+    body{font-family:Arial,system-ui;margin:20px;max-width:900px}
+    header{background:#113355;color:white;padding:12px;border-radius:6px;margin-bottom:16px}
+    nav{margin-bottom:20px}
+    .step{display:none}
+    .active{display:block}
+    fieldset{border:1px solid #ccc;margin:12px 0;padding:12px;border-radius:8px}
+    label{display:block;margin:6px 0}
+    input,select{padding:6px;width:300px;max-width:100%}
+    .nav-btns button{padding:8px 14px;margin-top:14px}
+    footer{margin-top:40px;font-size:0.8rem;color:#666;border-top:1px solid #ccc;padding-top:10px}
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Montana Child Support Professional Intake Wizard</h1>
+  <small>For mediators, MLSA, and OCA staff. Not an official CSSD form.</small>
+</header>
+
+<nav>
+  Step: 
+  <span id="stepLabel">1 / 8</span>
+</nav>
+
+<form id="wizard" onsubmit="return false;">
+
+  <!-- STEP 1 -->
+  <div class="step active" id="step1">
+    <h2>Case Info</h2>
+    <label>Case Name <input id="caseName"></label>
+    <label>County <input id="county"></label>
+    <label>Existing Support Order? <select id="priorOrder"><option>No</option><option>Yes</option></select></label>
+    <label>Upload prior order (optional) <input type="file" id="orderFile"></label>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="step" id="step2">
+    <h2>Parents</h2>
+    <fieldset>
+      <legend>Parent A</legend>
+      <label>Name <input id="nameA"></label>
+      <label>Role <select id="roleA"><option>Mother</option><option>Father</option><option>Other</option></select></label>
+      <label>Upload W-2/paystub <input type="file" id="fileA"></label>
+    </fieldset>
+    <fieldset>
+      <legend>Parent B</legend>
+      <label>Name <input id="nameB"></label>
+      <label>Role <select id="roleB"><option>Mother</option><option>Father</option><option>Other</option></select></label>
+      <label>Upload W-2/paystub <input type="file" id="fileB"></label>
+    </fieldset>
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="step" id="step3">
+    <h2>Children</h2>
+    <label>Number of children <input id="numKids" type="number" min="1" max="8" value="1"></label>
+  </div>
+
+  <!-- STEP 4 -->
+  <div class="step" id="step4">
+    <h2>Parent A Income & Deductions</h2>
+    <label>Total annual income $<input id="incomeA"></label>
+    <label>Total annual deductions $<input id="dedA"></label>
+  </div>
+
+  <!-- STEP 5 -->
+  <div class="step" id="step5">
+    <h2>Parent B Income & Deductions</h2>
+    <label>Total annual income $<input id="incomeB"></label>
+    <label>Total annual deductions $<input id="dedB"></label>
+  </div>
+
+  <!-- STEP 6 -->
+  <div class="step" id="step6">
+    <h2>Child Costs</h2>
+    <label>Childcare (annual) $<input id="childcare"></label>
+    <label>Health insurance (annual) $<input id="health"></label>
+  </div>
+
+  <!-- STEP 7 -->
+  <div class="step" id="step7">
+    <h2>Parenting Time</h2>
+    <label>Parent A days per year <input id="daysA" value="182"></label>
+    <label>Parent B days per year <input id="daysB" value="183"></label>
+  </div>
+
+  <!-- STEP 8 -->
+  <div class="step" id="step8">
+    <h2>Review & Calculate</h2>
+    <button id="calcBtn" type="button">Run Child Support Calculation</button>
+
+    <div id="results" style="margin-top:20px;display:none;background:#eef;padding:12px;border-radius:6px"></div>
+  </div>
+
+</form>
+
+<div class="nav-btns">
+  <button id="prevBtn" type="button">Back</button>
+  <button id="nextBtn" type="button">Next</button>
+</div>
+
+<footer>
+  <strong>Montana Child Support Estimator – Professional Version</strong><br/>
+  Not an official CSSD form. © 2025
+</footer>
+
+<script type="module">
+import { runMontanaChildSupport, fmt } from "../shared/engine.js";
+
+let current = 1;
+const max = 8;
+
+function showStep(n){
+  document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+  document.getElementById('step'+n).classList.add('active');
+  document.getElementById('stepLabel').textContent = `${n} / ${max}`;
+}
+document.getElementById('prevBtn').onclick = ()=>{ if(current>1) showStep(--current); };
+document.getElementById('nextBtn').onclick = ()=>{ if(current<max) showStep(++current); };
+
+document.getElementById('calcBtn').onclick = ()=>{
+  const mIncome = Number(incomeA.value)||0;
+  const fIncome = Number(incomeB.value)||0;
+  const mDed    = Number(dedA.value)||0;
+  const fDed    = Number(dedB.value)||0;
+
+  const kids = Number(numKids.value)||1;
+
+  const childcare = Number(childcare.value)||0;
+  const health    = Number(health.value)||0;
+
+  const daysAVal = Number(daysA.value)||0;
+  const daysBVal = Number(daysB.value)||0;
+
+  const parenting = Array.from({length:kids}, ()=>({
+    daysA:daysAVal,
+    daysB:daysBVal
+  }));
+
+  const result = runMontanaChildSupport({
+    mIncome, mDed,
+    fIncome, fDed,
+    numChildren:kids,
+    supplements:{childcare, health, med:0, other:0},
+    parenting
+  });
+
+  const r = document.getElementById('results');
+  r.style.display='block';
+  r.innerHTML = `
+    <h3>Results</h3>
+    <p><strong>Annual transfer:</strong> $${fmt(result.totalAnnual)}</p>
+    <p><strong>Monthly transfer:</strong> $${fmt(result.totalMonthly)}</p>
+    <h4>Per-child detail</h4>
+    ${result.perChildResults.map(c=>`
+      <div>Child ${c.child}: ${c.type}, annual $${fmt(c.annual)}, payer ${c.payer}</div>
+    `).join("")}
+  `;
+};
+</script>
+</body>
+</html>

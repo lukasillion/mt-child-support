@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Montana Child Support Estimator (Public)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <style>
+    body{font-family:Arial,system-ui;margin:20px;max-width:800px}
+    fieldset{border:1px solid #ccc;padding:10px;margin-top:12px;border-radius:8px}
+    legend{font-weight:bold}
+    label{display:block;margin:6px 0}
+    input,select{padding:6px;width:260px;max-width:100%}
+    button{margin-top:12px;padding:10px 16px;font-size:1rem}
+    .result{margin-top:20px;padding:14px;background:#eef2f8;border-radius:6px}
+  </style>
+</head>
+<body>
+
+<h1>Montana Child Support Estimator</h1>
+<p><small>Your data stays in your browser. Nothing is uploaded or stored on any server.</small></p>
+
+<form id="form" onsubmit="return false;">
+  <fieldset>
+    <legend>Parents & Children</legend>
+    <label>Your annual income (before taxes) $
+      <input type="number" id="incomeA">
+    </label>
+    <label>Other parent's annual income $
+      <input type="number" id="incomeB">
+    </label>
+    <label>Number of children
+      <input type="number" id="numKids" value="1" min="1" max="8">
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Deductions (approximate)</legend>
+    <label>Your yearly deductions (taxes, mandatory retirement) $
+      <input type="number" id="dedA">
+    </label>
+    <label>Other parent's yearly deductions $
+      <input type="number" id="dedB">
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Child Costs</legend>
+    <label>Child care costs (annual) $
+      <input type="number" id="childcare" value="0">
+    </label>
+    <label>Health insurance for children (annual) $
+      <input type="number" id="health" value="0">
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Parenting Time</legend>
+    <label>Your days per year
+      <input type="number" id="daysA" value="182">
+    </label>
+    <label>Other parent's days per year
+      <input type="number" id="daysB" value="183">
+    </label>
+  </fieldset>
+
+  <button id="calculate">Calculate</button>
+</form>
+
+<div id="output" class="result" style="display:none"></div>
+
+<script type="module">
+import { runMontanaChildSupport, fmt } from "../shared/engine.js";
+
+document.getElementById('calculate').addEventListener('click', () => {
+  const incomeA = Number(document.getElementById('incomeA').value)||0;
+  const incomeB = Number(document.getElementById('incomeB').value)||0;
+  const dedA    = Number(document.getElementById('dedA').value)||0;
+  const dedB    = Number(document.getElementById('dedB').value)||0;
+  const kids    = Number(document.getElementById('numKids').value)||1;
+
+  const childcare = Number(document.getElementById('childcare').value)||0;
+  const health    = Number(document.getElementById('health').value)||0;
+
+  const daysA = Number(document.getElementById('daysA').value)||0;
+  const daysB = Number(document.getElementById('daysB').value)||0;
+
+  // same schedule for all kids
+  const parenting = Array.from({length:kids}, ()=>({daysA, daysB}));
+
+  const result = runMontanaChildSupport({
+    mIncome: incomeA,
+    mDed: dedA,
+    fIncome: incomeB,
+    fDed: dedB,
+    numChildren: kids,
+    supplements: {
+      childcare, health,
+      med: 0, other: 0
+    },
+    parenting
+  });
+
+  const out = document.getElementById('output');
+  out.style.display = 'block';
+  out.innerHTML = `
+    <h2>Estimate</h2>
+    <p><strong>Annual transfer:</strong> $${fmt(result.totalAnnual)}</p>
+    <p><strong>Monthly:</strong> $${fmt(result.totalMonthly)}</p>
+    <small>This is an estimate based on Montana guidelines. It is not a court order.</small>
+  `;
+});
+</script>
+</body>
+</html>
