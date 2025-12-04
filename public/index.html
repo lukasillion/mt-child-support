@@ -2,293 +2,540 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Montana Child Support Estimator – Public</title>
+  <title>Montana Child Support Estimator – Guided Wizard</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:16px;max-width:900px}
-    h1{margin-bottom:4px}
-    .warn{background:#fff4e5;border-left:4px solid #ffb86b;padding:8px 10px;margin-bottom:10px;font-size:0.9rem}
-    fieldset{border:1px solid #ddd;border-radius:8px;padding:10px 12px;margin-bottom:12px}
-    legend{font-weight:600;padding:0 4px}
-    label{display:block;margin:6px 0;font-size:0.9rem}
-    input[type=text],input[type=number],select{width:260px;max-width:100%;padding:4px 6px;box-sizing:border-box}
-    small{color:#555}
-    button{padding:8px 12px;border-radius:6px;border:1px solid #ccc;background:#0b6efd;color:white;cursor:pointer;font-size:0.9rem}
-    button[disabled]{opacity:0.6;cursor:not-allowed}
-    .step{display:none}
-    .step.active{display:block}
-    .nav{display:flex;gap:8px;margin-top:10px}
-    .result{margin-top:14px;padding:12px;border-radius:8px;background:#f3f6fb;font-size:0.95rem}
-    .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
-    .chip{border-radius:999px;border:1px solid #ccc;padding:4px 10px;font-size:0.8rem;background:#f5f5f5;cursor:pointer}
-    .chip.selected{background:#0b6efd;color:white;border-color:#0b6efd}
-  </style>
+  <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <h1>Montana Child Support Estimator</h1>
-  <p><small>Public self-help version – not an official CSSD form. Your answers stay in this browser only.</small></p>
-
-  <div class="warn">
-    <strong>Privacy.</strong> Nothing you enter here is sent to a server unless you choose to use the optional W-2 upload feature in a future version. This demo assumes
-    you type figures from your pay documents yourself.
-  </div>
-
-  <form id="wizard" onsubmit="return false;">
-    <!-- STEP 1: Parents & children -->
-    <div class="step active" data-step="1">
-      <fieldset>
-        <legend>Step 1 – Parents & Children</legend>
-        <label>Your name (optional)
-          <input type="text" id="nameA" placeholder="Parent A">
-        </label>
-        <label>Other parent's name (optional)
-          <input type="text" id="nameB" placeholder="Parent B">
-        </label>
-        <label>Number of children in this case
-          <input type="number" id="numChildren" min="1" max="8" value="1">
-        </label>
-        <small>Only include children covered by this support order.</small>
-      </fieldset>
+  <header class="site-header">
+    <div class="brand">
+      <div class="logo-circle">MT</div>
+      <div>
+        <div class="brand-title">Montana Child Support Estimator</div>
+        <div class="brand-sub">Unofficial tool – uses CSSD guidelines for estimates only</div>
+      </div>
     </div>
+  </header>
 
-    <!-- STEP 2: Income + W-2 wording -->
-    <div class="step" data-step="2">
-      <fieldset>
-        <legend>Step 2 – Income from W-2 / paystubs</legend>
-        <p><strong>Use your W-2 or most recent paystubs.</strong></p>
-        <p><small>For W-2s, look at <strong>Box 1 – “Wages, tips, other compensation.”</strong> If you have more than one W-2, add all Box 1 amounts together.</small></p>
+  <main class="wizard-shell">
+    <aside class="wizard-sidebar">
+      <ol class="wizard-steps">
+        <li data-step-label="1" class="active">Parents & Children</li>
+        <li data-step-label="2">Income (W-2 style)</li>
+        <li data-step-label="3">Deductions & Other Support</li>
+        <li data-step-label="4">Child Costs</li>
+        <li data-step-label="5">Parenting Time</li>
+        <li data-step-label="6">Review & Results</li>
+      </ol>
+      <p class="sidebar-note">
+        This tool follows the structure of Montana CSSD Worksheets A, B, and C, but is
+        not an official CSSD product. Always review final numbers with an attorney or CSSD.
+      </p>
+    </aside>
 
-        <label>Your total W-2 wages (Box 1, all jobs) – annual $
-          <input type="number" id="incomeA" step="0.01" placeholder="e.g. 43500.00">
-        </label>
+    <section class="wizard-main">
+      <!-- STEP 1: Parents & children -->
+      <section class="wizard-step active" data-step="1">
+        <h1>Parents & Children</h1>
+        <p>We’ll start with some basic information about the parents and kids involved in this case.</p>
 
-        <label>Other parent's total W-2 wages (Box 1, all jobs) – annual $
-          <input type="number" id="incomeB" step="0.01">
-        </label>
-
-        <p><small>If you don’t use W-2s, enter your best estimate of yearly income before taxes from all sources.</small></p>
-
-        <hr/>
-
-        <p><strong>Optional (future): auto-fill from W-2</strong></p>
-        <label>Upload your W-2 (PDF or image)
-          <input type="file" id="w2Upload" accept=".pdf,.png,.jpg,.jpeg">
-        </label>
-        <button type="button" id="w2Analyze" disabled>Auto-fill from W-2 (coming soon)</button>
-        <small id="w2Status"></small>
-        <p><small>This button is disabled until an OCR server is configured. Once configured, it will read W-2 Box 1 and other fields automatically.</small></p>
-      </fieldset>
-    </div>
-
-    <!-- STEP 3: Deductions -->
-    <div class="step" data-step="3">
-      <fieldset>
-        <legend>Step 3 – Taxes & required deductions</legend>
-        <p><small>Use your paystubs and W-2. Include amounts that are required, such as:</small></p>
-        <ul style="margin-top:4px;padding-left:18px;font-size:0.85rem;">
-          <li>Social Security and Medicare taxes</li>
-          <li>Federal and state income tax withholding</li>
-          <li>Mandatory retirement contributions</li>
-          <li>Required union dues</li>
-        </ul>
-
-        <label>Your yearly taxes & required deductions (approximate) $
-          <input type="number" id="dedA" step="0.01">
-        </label>
-
-        <label>Other parent's yearly taxes & required deductions $
-          <input type="number" id="dedB" step="0.01">
-        </label>
-
-        <small>If you are unsure, you can leave these blank and return later with paystubs.</small>
-      </fieldset>
-    </div>
-
-    <!-- STEP 4: Child-related costs -->
-    <div class="step" data-step="4">
-      <fieldset>
-        <legend>Step 4 – Child-related costs (yearly)</legend>
-        <label>Child care costs for these children (per year) $
-          <input type="number" id="childcare" step="0.01" value="0">
-        </label>
-        <small>Include daycare, after-school programs, or other regular child care expenses.</small>
-
-        <label style="margin-top:10px;">Health insurance premium for these children (per year) $
-          <input type="number" id="health" step="0.01" value="0">
-        </label>
-        <small>Use the part of your health premium that is just for the children in this case, not for adults or other children.</small>
-      </fieldset>
-    </div>
-
-    <!-- STEP 5: Parenting time -->
-    <div class="step" data-step="5">
-      <fieldset>
-        <legend>Step 5 – Parenting time (days per year)</legend>
-        <p><small>Choose the option closest to your parenting schedule. You can adjust the exact days if you know them.</small></p>
-
-        <div class="chips" id="scheduleChips">
-          <div class="chip selected" data-type="primaryA">
-            Mostly with You (other parent has visits)
+        <div class="grid-2">
+          <div>
+            <label>
+              Parent A name
+              <input id="parentAName" type="text" placeholder="Parent A / Mother / Petitioner" />
+            </label>
           </div>
-          <div class="chip" data-type="primaryB">
-            Mostly with Other Parent
-          </div>
-          <div class="chip" data-type="fifty50">
-            About 50 / 50
+          <div>
+            <label>
+              Parent B name
+              <input id="parentBName" type="text" placeholder="Parent B / Father / Respondent" />
+            </label>
           </div>
         </div>
 
-        <div style="margin-top:10px;">
-          <label>Your days with the children per year
-            <input type="number" id="daysA" step="0.1" value="255">
-          </label>
-          <label>Other parent's days with the children per year
-            <input type="number" id="daysB" step="0.1" value="110">
-          </label>
-          <small id="scheduleHint"></small>
+        <div class="grid-2">
+          <div>
+            <label>
+              Number of children covered by this order
+              <input id="numChildren" type="number" min="1" max="8" value="1" />
+            </label>
+          </div>
+          <div>
+            <label>
+              Case county (optional)
+              <input id="caseCounty" type="text" placeholder="e.g., Missoula, Lewis & Clark" />
+            </label>
+          </div>
         </div>
-      </fieldset>
-    </div>
 
-    <!-- STEP 6: Review & Calculate -->
-    <div class="step" data-step="6">
-      <fieldset>
-        <legend>Step 6 – Review & calculate</legend>
-        <p><small>When you click “Calculate estimate,” this tool uses Montana’s child support rules to estimate a monthly support amount based on the information you entered.</small></p>
-        <button type="button" id="calcBtn">Calculate estimate</button>
-      </fieldset>
-      <div id="result" class="result" style="display:none"></div>
-    </div>
+        <p class="hint">
+          You can use “Parent A / Parent B” instead of Mother/Father if that fits your case better. These labels
+          will appear on the summary and worksheets.
+        </p>
+      </section>
 
-    <div class="nav">
-      <button type="button" id="backBtn">Back</button>
-      <button type="button" id="nextBtn">Next</button>
-    </div>
-  </form>
+      <!-- STEP 2: Income -->
+      <section class="wizard-step" data-step="2">
+        <h1>Income – W-2 Style</h1>
+        <p>
+          Enter annual income for each parent. You can add up all W-2s and other income types.
+          Use the same numbers you’d get from tax forms.
+        </p>
+
+        <h2>Parent A income (annual)</h2>
+        <div class="grid-2">
+          <label>
+            W-2 Box 1 – wages, tips, other compensation (all jobs)
+            <input id="mW2" type="number" step="0.01" />
+          </label>
+          <label>
+            Self-employment net (Schedule C/F, etc.)
+            <input id="mSelf" type="number" step="0.01" />
+          </label>
+        </div>
+        <div class="grid-2">
+          <label>
+            Other taxable income (interest, unemployment, etc.)
+            <input id="mOtherTax" type="number" step="0.01" />
+          </label>
+          <label>
+            Other nontaxable income (if counted under guidelines)
+            <input id="mOtherNonTax" type="number" step="0.01" />
+          </label>
+        </div>
+
+        <h2>Parent B income (annual)</h2>
+        <div class="grid-2">
+          <label>
+            W-2 Box 1 – wages, tips, other compensation (all jobs)
+            <input id="fW2" type="number" step="0.01" />
+          </label>
+          <label>
+            Self-employment net (Schedule C/F, etc.)
+            <input id="fSelf" type="number" step="0.01" />
+          </label>
+        </div>
+        <div class="grid-2">
+          <label>
+            Other taxable income
+            <input id="fOtherTax" type="number" step="0.01" />
+          </label>
+          <label>
+            Other nontaxable income
+            <input id="fOtherNonTax" type="number" step="0.01" />
+          </label>
+        </div>
+
+        <p class="hint">
+          Tip: To annualize, multiply monthly amounts by 12, or weekly amounts by 52.
+        </p>
+      </section>
+
+      <!-- STEP 3: Deductions & other support -->
+      <section class="wizard-step" data-step="3">
+        <h1>Deductions & Other Support</h1>
+        <p>
+          These are amounts that Montana’s guidelines allow you to subtract from income
+          (taxes, mandatory retirement, support for other children, etc.).
+        </p>
+
+        <h2>Parent A deductions (annual)</h2>
+        <div class="grid-2">
+          <label>
+            Federal income tax withheld
+            <input id="mFedTax" type="number" step="0.01" />
+          </label>
+          <label>
+            State income tax
+            <input id="mStateTax" type="number" step="0.01" />
+          </label>
+        </div>
+        <div class="grid-2">
+          <label>
+            Social Security tax (FICA)
+            <input id="mSS" type="number" step="0.01" />
+          </label>
+          <label>
+            Medicare tax
+            <input id="mMedicare" type="number" step="0.01" />
+          </label>
+        </div>
+        <div class="grid-2">
+          <label>
+            Mandatory retirement contributions
+            <input id="mRetire" type="number" step="0.01" />
+          </label>
+          <label>
+            Union dues
+            <input id="mUnion" type="number" step="0.01" />
+          </label>
+        </div>
+        <div class="grid-2">
+          <label>
+            Child support paid for other children (court-ordered)
+            <input id="mOtherSupport" type="number" step="0.01" />
+          </label>
+          <label>
+            Alimony paid
+            <input id="mAlimony" type="number" step="0.01" />
+          </label>
+        </div>
+
+        <h2>Parent B deductions (annual)</h2>
+        <div class="grid-2">
+          <label>
+            Federal income tax withheld
+            <input id="fFedTax" type="number" step="0.01" />
+          </label>
+          <label>
+            State income tax
+            <input id="fStateTax" type="number" step="0.01" />
+          </label>
+        </div>
+        <div class="grid-2">
+          <label>
+            Social Security tax (FICA)
+            <input id="fSS" type="number" step="0.01" />
+          </label>
+          <label>
+            Medicare tax
+            <input id="fMedicare" type="number" step="0.01" />
+          </label>
+        </div>
+        <div class="grid-2">
+          <label>
+            Mandatory retirement contributions
+            <input id="fRetire" type="number" step="0.01" />
+          </label>
+          <label>
+            Union dues
+            <input id="fUnion" type="number" step="0.01" />
+          </label>
+        </div>
+        <div class="grid-2">
+          <label>
+            Child support paid for other children (court-ordered)
+            <input id="fOtherSupport" type="number" step="0.01" />
+          </label>
+          <label>
+            Alimony paid
+            <input id="fAlimony" type="number" step="0.01" />
+          </label>
+        </div>
+
+        <p class="hint">
+          Use annual totals. You may need to convert from paystub “year-to-date” amounts.
+        </p>
+      </section>
+
+      <!-- STEP 4: Child costs -->
+      <section class="wizard-step" data-step="4">
+        <h1>Child-Related Costs</h1>
+        <p>
+          These are costs for the children in this case only. The calculator will split them between parents.
+        </p>
+
+        <div class="grid-2">
+          <label>
+            Work-related childcare (annual, total for these children)
+            <input id="childcare" type="number" step="0.01" />
+          </label>
+          <label>
+            Child health insurance premium (annual portion for these children)
+            <input id="health" type="number" step="0.01" />
+          </label>
+        </div>
+        <div class="grid-2">
+          <label>
+            Uninsured medical / therapy (annual)
+            <input id="med" type="number" step="0.01" />
+          </label>
+          <label>
+            Other recurring child expenses (annual)
+            <input id="otherSupp" type="number" step="0.01" />
+          </label>
+        </div>
+
+        <p class="hint">
+          Do not include costs already counted elsewhere (like adult health insurance or unrelated debt).
+        </p>
+      </section>
+
+      <!-- STEP 5: Parenting time -->
+      <section class="wizard-step" data-step="5">
+        <h1>Parenting Time</h1>
+        <p>
+          Enter the approximate number of days per year each child spends with each parent.
+          If parenting time is the same for all children, you can use one set of numbers.
+        </p>
+
+        <div class="grid-2">
+          <label>
+            Days per year with Parent A (each child, if roughly the same)
+            <input id="daysA" type="number" step="0.1" value="255" />
+          </label>
+          <label>
+            Days per year with Parent B (each child)
+            <input id="daysB" type="number" step="0.1" value="110" />
+          </label>
+        </div>
+
+        <p class="hint">
+          If either parent has more than 110 days per year with a child, Worksheet B&#8217;s shared-parenting
+          adjustment may apply. This tool approximates that adjustment.
+        </p>
+      </section>
+
+      <!-- STEP 6: Review & Results -->
+      <section class="wizard-step" data-step="6">
+        <h1>Review & Results</h1>
+        <p>Review your entries, then run the calculator and generate worksheets.</p>
+
+        <div id="reviewSummary" class="review-box">
+          <!-- Filled by JavaScript before calculation -->
+        </div>
+
+        <div class="actions-row">
+          <button id="calcBtn" type="button" class="primary">Calculate &amp; Generate Worksheets</button>
+        </div>
+
+        <div id="resultBox" class="result-box" hidden>
+          <!-- Results injected here -->
+        </div>
+      </section>
+
+      <!-- NAV -->
+      <footer class="wizard-nav">
+        <button id="backBtn" type="button" class="ghost">Back</button>
+        <div class="spacer"></div>
+        <button id="nextBtn" type="button" class="primary">Next</button>
+      </footer>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>
+      This is an unofficial estimator based on Montana child support guidelines. It does not create a binding order.
+      For legal advice, speak with an attorney or contact Montana CSSD.
+    </p>
+  </footer>
 
   <script type="module">
-    import { runMontanaChildSupport, fmt } from "/shared/engine.js";
+    import { runMontanaChildSupport, fmt } from "./engine.js";
+    import { generateWorksheets } from "./pdfgen.js";
 
-    // --- Wizard navigation ---
+    const steps = Array.from(document.querySelectorAll(".wizard-step"));
+    const stepLabels = Array.from(document.querySelectorAll(".wizard-steps li"));
+    const backBtn = document.getElementById("backBtn");
+    const nextBtn = document.getElementById("nextBtn");
+    const calcBtn = document.getElementById("calcBtn");
+    const reviewSummary = document.getElementById("reviewSummary");
+    const resultBox = document.getElementById("resultBox");
+
     let currentStep = 1;
-    const maxStep = 6;
+    const maxStep = steps.length;
 
-    function showStep(n) {
-      document.querySelectorAll('.step').forEach(step => step.classList.remove('active'));
-      const el = document.querySelector('.step[data-step="'+n+'"]');
-      if (el) el.classList.add('active');
-      currentStep = n;
-      // toggle nav buttons
-      document.getElementById('backBtn').disabled = (n === 1);
-      document.getElementById('nextBtn').disabled = (n === maxStep);
-    }
-
-    document.getElementById('backBtn').addEventListener('click', () => {
-      if (currentStep > 1) showStep(currentStep - 1);
-    });
-    document.getElementById('nextBtn').addEventListener('click', () => {
-      if (currentStep < maxStep) showStep(currentStep + 1);
-    });
-
-    // --- Parenting schedule chip behavior ---
-    const chipsContainer = document.getElementById('scheduleChips');
-    const scheduleHint = document.getElementById('scheduleHint');
-    const daysAInput = document.getElementById('daysA');
-    const daysBInput = document.getElementById('daysB');
-
-    function setSchedule(type){
-      chipsContainer.querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
-      const chip = chipsContainer.querySelector('.chip[data-type="'+type+'"]');
-      if (chip) chip.classList.add('selected');
-
-      if (type === 'primaryA') {
-        daysAInput.value = 255;
-        daysBInput.value = 110;
-        scheduleHint.textContent = "Example: children live mostly with you, with regular visits to the other parent.";
-      } else if (type === 'primaryB') {
-        daysAInput.value = 110;
-        daysBInput.value = 255;
-        scheduleHint.textContent = "Example: children live mostly with the other parent, with your regular visits.";
+    function showStep(step) {
+      currentStep = Math.min(Math.max(step, 1), maxStep);
+      steps.forEach(s => s.classList.toggle("active", Number(s.dataset.step) === currentStep));
+      stepLabels.forEach(li => {
+        const labelStep = Number(li.dataset.stepLabel);
+        li.classList.toggle("active", labelStep === currentStep);
+        li.classList.toggle("done", labelStep < currentStep);
+      });
+      backBtn.disabled = currentStep === 1;
+      nextBtn.hidden = currentStep === maxStep;
+      if (currentStep === maxStep) {
+        nextBtn.hidden = true;
       } else {
-        daysAInput.value = 182.5;
-        daysBInput.value = 182.5;
-        scheduleHint.textContent = "Example: week-on/week-off or similar 50/50 schedule.";
+        nextBtn.hidden = false;
       }
     }
 
-    chipsContainer.addEventListener('click', (e) => {
-      const chip = e.target.closest('.chip');
-      if (!chip) return;
-      const type = chip.getAttribute('data-type');
-      setSchedule(type);
-    });
-    // initialize hint
-    setSchedule('primaryA');
-
-    // --- Calculation ---
-    document.getElementById('calcBtn').addEventListener('click', () => {
-      const nameA = document.getElementById('nameA').value || 'Parent A';
-      const nameB = document.getElementById('nameB').value || 'Parent B';
-      const numChildren = Math.max(1, Math.min(8, parseInt(document.getElementById('numChildren').value) || 1));
-
-      const incomeA = parseFloat(document.getElementById('incomeA').value) || 0;
-      const incomeB = parseFloat(document.getElementById('incomeB').value) || 0;
-      const dedA = parseFloat(document.getElementById('dedA').value) || 0;
-      const dedB = parseFloat(document.getElementById('dedB').value) || 0;
-
-      const childcare = parseFloat(document.getElementById('childcare').value) || 0;
-      const health = parseFloat(document.getElementById('health').value) || 0;
-
-      const daysA = parseFloat(daysAInput.value) || 0;
-      const daysB = parseFloat(daysBInput.value) || 0;
-
-      const parenting = [];
-      for (let i = 0; i < numChildren; i++) {
-        parenting.push({ daysA, daysB });
+    backBtn.addEventListener("click", () => showStep(currentStep - 1));
+    nextBtn.addEventListener("click", () => {
+      if (currentStep === 5) {
+        buildReview();
       }
+      showStep(currentStep + 1);
+    });
 
-      const result = runMontanaChildSupport({
-        mIncome: incomeA,
-        mDed: dedA,
-        fIncome: incomeB,
-        fDed: dedB,
+    function readNumber(id) {
+      const el = document.getElementById(id);
+      if (!el) return 0;
+      const v = parseFloat(el.value);
+      return Number.isFinite(v) ? v : 0;
+    }
+
+    function buildReview() {
+      const parentAName = document.getElementById("parentAName").value || "Parent A";
+      const parentBName = document.getElementById("parentBName").value || "Parent B";
+      const numChildren = parseInt(document.getElementById("numChildren").value, 10) || 1;
+      const caseCounty = document.getElementById("caseCounty").value || "(not specified)";
+
+      const mIncome =
+        readNumber("mW2") +
+        readNumber("mSelf") +
+        readNumber("mOtherTax") +
+        readNumber("mOtherNonTax");
+
+      const fIncome =
+        readNumber("fW2") +
+        readNumber("fSelf") +
+        readNumber("fOtherTax") +
+        readNumber("fOtherNonTax");
+
+      const mDed =
+        readNumber("mFedTax") +
+        readNumber("mStateTax") +
+        readNumber("mSS") +
+        readNumber("mMedicare") +
+        readNumber("mRetire") +
+        readNumber("mUnion") +
+        readNumber("mOtherSupport") +
+        readNumber("mAlimony");
+
+      const fDed =
+        readNumber("fFedTax") +
+        readNumber("fStateTax") +
+        readNumber("fSS") +
+        readNumber("fMedicare") +
+        readNumber("fRetire") +
+        readNumber("fUnion") +
+        readNumber("fOtherSupport") +
+        readNumber("fAlimony");
+
+      const childcare = readNumber("childcare");
+      const health = readNumber("health");
+      const med = readNumber("med");
+      const otherSupp = readNumber("otherSupp");
+
+      const daysA = readNumber("daysA");
+      const daysB = readNumber("daysB");
+
+      reviewSummary.innerHTML = `
+        <h2>Quick review</h2>
+        <ul>
+          <li><strong>Parents:</strong> ${parentAName} &amp; ${parentBName}</li>
+          <li><strong>County:</strong> ${caseCounty}</li>
+          <li><strong>Children:</strong> ${numChildren}</li>
+          <li><strong>${parentAName} income (annual):</strong> $${fmt(mIncome)} | deductions: $${fmt(mDed)}</li>
+          <li><strong>${parentBName} income (annual):</strong> $${fmt(fIncome)} | deductions: $${fmt(fDed)}</li>
+          <li><strong>Childcare (annual):</strong> $${fmt(childcare)} | health premium: $${fmt(health)}</li>
+          <li><strong>Uninsured medical:</strong> $${fmt(med)} | other child costs: $${fmt(otherSupp)}</li>
+          <li><strong>Parenting time (per child):</strong> ${daysA} days with ${parentAName}, ${daysB} with ${parentBName}</li>
+        </ul>
+        <p class="hint">If something looks off, use Back to correct it before calculating.</p>
+      `;
+    }
+
+    calcBtn.addEventListener("click", async () => {
+      const parentAName = document.getElementById("parentAName").value || "Parent A";
+      const parentBName = document.getElementById("parentBName").value || "Parent B";
+      const numChildren = parseInt(document.getElementById("numChildren").value, 10) || 1;
+
+      const mIncome =
+        readNumber("mW2") +
+        readNumber("mSelf") +
+        readNumber("mOtherTax") +
+        readNumber("mOtherNonTax");
+
+      const fIncome =
+        readNumber("fW2") +
+        readNumber("fSelf") +
+        readNumber("fOtherTax") +
+        readNumber("fOtherNonTax");
+
+      const mDed =
+        readNumber("mFedTax") +
+        readNumber("mStateTax") +
+        readNumber("mSS") +
+        readNumber("mMedicare") +
+        readNumber("mRetire") +
+        readNumber("mUnion") +
+        readNumber("mOtherSupport") +
+        readNumber("mAlimony");
+
+      const fDed =
+        readNumber("fFedTax") +
+        readNumber("fStateTax") +
+        readNumber("fSS") +
+        readNumber("fMedicare") +
+        readNumber("fRetire") +
+        readNumber("fUnion") +
+        readNumber("fOtherSupport") +
+        readNumber("fAlimony");
+
+      const childcare = readNumber("childcare");
+      const health = readNumber("health");
+      const med = readNumber("med");
+      const otherSupp = readNumber("otherSupp");
+
+      const daysA = readNumber("daysA");
+      const daysB = readNumber("daysB");
+
+      const parenting = Array.from({ length: numChildren }).map(() => ({
+        daysA,
+        daysB,
+      }));
+
+      const calc = runMontanaChildSupport({
+        mIncome,
+        mDed,
+        fIncome,
+        fDed,
         numChildren,
-        supplements: { childcare, health, med: 0, other: 0 },
-        parenting
+        supplements: { childcare, health, med, other: otherSupp },
+        parenting,
       });
 
-      let payerText;
-      if (result.totalAnnual === 0) {
-        payerText = "This estimate does not suggest a transfer payment.";
-      } else {
-        const any = result.perChildResults.find(r => r.annual > 0);
-        if (any) {
-          const payerName = any.payer === 'A' ? nameA : nameB;
-          payerText = payerName + " is estimated to pay support.";
-        } else {
-          payerText = "One parent is estimated to pay support.";
-        }
-      }
+      let payerName = "No transfer (equal obligations)";
+      if (calc.payer === "M") payerName = parentAName;
+      if (calc.payer === "F") payerName = parentBName;
 
-      const div = document.getElementById('result');
-      div.style.display = 'block';
-      div.innerHTML = `
-        <h2>Your estimate</h2>
-        <p><strong>Estimated annual transfer:</strong> $${fmt(result.totalAnnual)}</p>
-        <p><strong>Estimated monthly transfer:</strong> $${fmt(result.totalMonthly)}</p>
-        <p><strong>Who pays?</strong> ${payerText}</p>
-        <p><small>This is an estimate based on Montana’s child support guidelines and the information you provided. It is not a court order. 
-        You can print this page or save it as a PDF to bring to mediation or court.</small></p>
+      resultBox.hidden = false;
+      resultBox.innerHTML = `
+        <h2>Estimate results</h2>
+        <p><strong>Estimated monthly transfer:</strong> $${fmt(calc.totalMonthly)} (${payerName} pays)</p>
+        <p>
+          <strong>${parentAName}</strong> total monthly obligation (all children): $${fmt(calc.totalMonthlyM)}<br>
+          <strong>${parentBName}</strong> total monthly obligation (all children): $${fmt(calc.totalMonthlyF)}
+        </p>
+        <h3>Per-child breakdown (annual &amp; monthly)</h3>
+        <ul>
+          ${calc.perChildResults
+            .map(
+              c => `
+              <li>
+                Child ${c.childIndex}: ${parentAName} – $${fmt(c.monthlyM)} / month, 
+                ${parentBName} – $${fmt(c.monthlyF)} / month
+                (days: ${c.daysM} with ${parentAName}, ${c.daysF} with ${parentBName})
+              </li>
+            `
+            )
+            .join("")}
+        </ul>
+        <p class="hint">
+          Next, the tool will attempt to fill in Montana Worksheets A/B/C using your numbers.
+          You can attach those to mediation packets or review with counsel.
+        </p>
       `;
-      showStep(6);
-      window.scrollTo({ top: div.offsetTop - 10, behavior: 'smooth' });
+
+      try {
+        await generateWorksheets(calc, {
+          parentAName,
+          parentBName,
+          numChildren,
+        });
+      } catch (err) {
+        console.warn("PDF generation failed or templates not ready:", err);
+        alert("Calculation completed. PDF worksheets could not be generated yet (templates may not be fully set up). The numbers above are still valid as an estimate.");
+      }
     });
 
-    // NOTE: W-2 OCR button is intentionally disabled until you point it at a real API.
-    document.getElementById('w2Analyze').addEventListener('click', () => {
-      // when you have an OCR API, enable this button and implement the fetch here
-      alert("W-2 auto-fill will be available once the OCR service is connected.");
-    });
+    // Initialize
+    showStep(1);
   </script>
 </body>
 </html>
