@@ -1,26 +1,19 @@
 // public/engine.js
-// Core engine for Montana child support estimation.
-// Uses annualized dollars and CSSD-style rounding (.49 down, .50 up).
+// Core Montana Child Support engine for the wizard + Worksheet A.
+// - Tracks Worksheet A lines 1–24 explicitly (including SOLA 15–23)
+// - Returns shape expected by index.html and pdfgen.js
 
-export function r0(x) {
-  return Math.round(Number.isFinite(+x) ? +x : 0);
-}
-
-export function r2(x) {
-  const n = Number.isFinite(+x) ? +x : 0;
-  return Math.round(n * 100) / 100;
-}
-
-export function fmt(x) {
-  const n = Number.isFinite(+x) ? +x : 0;
-  return n.toLocaleString(undefined, {
+// Simple formatter used by the UI
+export function fmt(n) {
+  const num = Number.isFinite(+n) ? +n : 0;
+  return num.toLocaleString(undefined, {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   });
 }
 
-// Guideline constants – adjust if CSSD tables change
-const PERSONAL_ALLOWANCE = 20345;
+// Core constants – same as your earlier estimator
+const PERSONAL_ALLOWANCE = 20345.0; // per parent, annual
 
 const PRIMARY_ALLOWANCE_BY_CHILD = {
   1: 6104,
@@ -44,277 +37,254 @@ const SOLA_FACTOR_BY_CHILD = {
   8: 0.47,
 };
 
-// Worksheet B credit factor (shared-parenting)
-const CREDIT_FACTOR = 0.0069;
-
-// Worksheet C minimum support ratio bands
-const MIN_SUPPORT_BANDS = [
-  { min: 0.0,   max: 0.25, mult: 0.00 },
-  { min: 0.251, max: 0.31, mult: 0.01 },
-  { min: 0.311, max: 0.38, mult: 0.02 },
-  { min: 0.381, max: 0.45, mult: 0.03 },
-  { min: 0.451, max: 0.52, mult: 0.04 },
-  { min: 0.521, max: 0.59, mult: 0.05 },
-  { min: 0.591, max: 0.66, mult: 0.06 },
-  { min: 0.661, max: 0.73, mult: 0.07 },
-  { min: 0.731, max: 0.80, mult: 0.08 },
-  { min: 0.801, max: 0.87, mult: 0.09 },
-  { min: 0.871, max: 0.94, mult: 0.10 },
-  { min: 0.941, max: 1.00, mult: 0.11 },
-];
-
-// Worksheet C – minimum support calculation for one parent
-function computeWorksheetC(line3, line4) {
-  const L3 = r0(line3);
-  const L4 = r0(line4);
-  const ratio = L4 === 0 ? 0 : L3 / L4;
-
-  let mult = 0.0;
-  for (const band of MIN_SUPPORT_BANDS) {
-    if (ratio >= band.min && ratio <= band.max) {
-      mult = band.mult;
-      break;
-    }
-  }
-  const minSupport = r0(L3 * mult);
-  return { L3, L4, ratio, mult, minSupport };
+// helpers
+function toNum(x) {
+  const n = parseFloat(x);
+  return Number.isFinite(n) ? n : 0;
 }
 
-// Worksheet A Part 1 for one parent (lines 1i–7)
-function computeWorksheetAPart1(grossAnnual, deductionsAnnual) {
-  const L1i = r0(grossAnnual);
-  const L2l = r0(deductionsAnnual);
-  const L3  = r0(L1i - L2l);
+function clampInt(x, min, max) {
+  const n = parseInt(x, 10);
+  if (!Number.isFinite(n)) return min;
+  return Math.max(min, Math.min(max, n));
+}
 
-  const L4  = PERSONAL_ALLOWANCE;
-  const L5  = r0(Math.max(0, L3 - L4));
+function roundDollar(x) {
+  return Math.round(toNum(x));
+}
 
-  let wsC = null;
-  let L6;
-  if (L5 <= 0) {
-    wsC = computeWorksheetC(L3, L4);
-    L6 = wsC.minSupport;
+/**
+ * Main engine entry point.
+ *
+ * input = {
+ *   grossMother,
+ *   grossFather,
+ *   otherSupportMother,
+ *   otherSupportFather,
+ *   numChildren,
+ *   childcare,
+ *   health,
+ *   med,
+ *   otherSupp,
+ *   parenting: [{ daysA, daysB }, ...]
+ * }
+ */
+export function runMontanaChildSupport(input) {
+  const grossMother = toNum(input.grossMother);
+  const grossFather = toNum(input.grossFather);
+
+  const otherSupportMother = toNum(input.otherSupportMother);
+  const otherSupportFather = toNum(input.otherSupportFather);
+
+  const numChildren = clampInt(input.numChildren ?? 1, 1, 8);
+
+  const childcare = toNum(input.childcare);
+  const health = toNum(input.health);
+  const med = toNum(input.med);
+  const otherSupp = toNum(input.otherSupp);
+
+  const parenting = Array.isArray(input.parenting) ? input.parenting : [];
+
+  const primaryAllowance =
+    PRIMARY_ALLOWANCE_BY_CHILD[numChildren] || PRIMARY_ALLOWANCE_BY_CHILD[8];
+  const solaFactor =
+    SOLA_FACTOR_BY_CHILD[numChildren] || SOLA_FACTOR_BY_CHILD[8];
+
+  const totalSupplements = childcare + health + med + otherSupp;
+
+  // Worksheet A containers
+  const mother = {};
+  const father = {};
+  const worksheetA = { mother, father };
+
+  // --- LINES 1–2: totals (we’re aggregating W-2 style inputs already in the wizard) ---
+
+  // Line 1i: total gross income
+  mother.L1i = grossMother;
+  father.L1i = grossFather;
+
+  // Line 2l: total deductions counted as “other support paid”
+  // (you can expand this later to track 2a–2k explicitly)
+  mother.L2l = otherSupportMother;
+  father.L2l = otherSupportFather;
+
+  // --- LINES 3–7: available income and minimum support ---
+
+  // Line 3: income after deductions
+  mother.L3 = mother.L1i - mother.L2l;
+  father.L3 = father.L1i - father.L2l;
+
+  // Line 4: subtract personal allowance
+  mother.L4 = mother.L3 - PERSONAL_ALLOWANCE;
+  father.L4 = father.L3 - PERSONAL_ALLOWANCE;
+
+  // Line 5: income available for support (no minimum floor yet)
+  mother.L5 = Math.max(0, mother.L4);
+  father.L5 = Math.max(0, father.L4);
+
+  // Line 6: minimum 12% of gross
+  mother.L6 = grossMother * 0.12;
+  father.L6 = grossFather * 0.12;
+
+  // Line 7: greater of line 5 or line 6
+  mother.L7 = Math.max(mother.L5, mother.L6);
+  father.L7 = Math.max(father.L5, father.L6);
+
+  // Combined line 7 & shares
+  const L7_combined = mother.L7 + father.L7;
+  worksheetA.L7_combined = L7_combined;
+
+  const shareMother = L7_combined > 0 ? mother.L7 / L7_combined : 0.5;
+  const shareFather = 1 - shareMother;
+
+  worksheetA.shareMother = shareMother;
+  worksheetA.shareFather = shareFather;
+
+  // Line 8: combined available income
+  worksheetA.L8 = L7_combined;
+
+  // Line 9: share of combined (percent, used only for display)
+  worksheetA.L9_mother = shareMother;
+  worksheetA.L9_father = shareFather;
+
+  // Line 10: # children
+  worksheetA.L10_children = numChildren;
+
+  // Line 11: primary allowance
+  worksheetA.L11_primary_allowance = primaryAllowance;
+
+  // Line 12: supplements
+  worksheetA.L12a_childcare = childcare;
+  worksheetA.L12b_health = health;
+  worksheetA.L12c_unreimbursed_med = med;
+  worksheetA.L12d_other = otherSupp;
+  worksheetA.L12e_total = totalSupplements;
+
+  // Line 13: total primary + supplements
+  worksheetA.L13_total = primaryAllowance + totalSupplements;
+
+  worksheetA.primaryAllowance = primaryAllowance;
+  worksheetA.totalSupplements = totalSupplements;
+
+  // --- SOLA SECTION (LINES 15–23) ---
+
+  function computeSOLA(parent, share) {
+    const out = {};
+
+    // CSSD rule: if line 6 > line 5, skip 15–20 and use line 6 as line 21.
+    const skipSOLA = parent.L6 > parent.L5;
+
+    if (skipSOLA) {
+      out.L15 = null;
+      out.L16 = null;
+      out.L17 = null;
+      out.L18a = null;
+      out.L18b = null;
+      out.L19 = null;
+      out.L20 = null;
+
+      out.L21 = parent.L6; // “enter line 6 amount”
+      out.L22 = 0;         // no additional credits modeled yet
+      out.L23 = out.L21 - out.L22;
+
+      // Line 24: annual obligation (we’ll round to nearest dollar for line 24)
+      out.L24 = roundDollar(out.L23);
+      return out;
+    }
+
+    // Line 15: line 7 minus share of primary allowance and supplements
+    out.L15 = parent.L7 - share * primaryAllowance - share * totalSupplements;
+
+    // Line 16: pre-SOLA credits (0 for now; can be expanded later)
+    out.L16 = 0;
+
+    // Line 17
+    out.L17 = out.L15 - out.L16;
+
+    // Line 18a/18b: additional adjustments (0 for now)
+    out.L18a = 0;
+    out.L18b = 0;
+
+    // Line 19
+    out.L19 = out.L17 - (out.L18a + out.L18b);
+
+    // Line 20: SOLA = adjusted income × SOLA factor
+    out.L20 = out.L19 * solaFactor;
+
+    // Line 21: because we’re not skipping SOLA, equals line 20
+    out.L21 = out.L20;
+
+    // Line 22: post-SOLA credits (0 for now)
+    out.L22 = 0;
+
+    // Line 23
+    out.L23 = out.L21 - out.L22;
+
+    // Line 24: annual obligation (rounded to nearest dollar for worksheet)
+    out.L24 = roundDollar(out.L23);
+
+    return out;
+  }
+
+  const solaM = computeSOLA(mother, shareMother);
+  const solaF = computeSOLA(father, shareFather);
+
+  Object.assign(mother, solaM);
+  Object.assign(father, solaF);
+
+  worksheetA.mother = mother;
+  worksheetA.father = father;
+
+  // Total annual support sums + who pays whom
+  const annualM = mother.L24 || 0;
+  const annualF = father.L24 || 0;
+
+  worksheetA.totalSupportAnnual = annualM + annualF;
+
+  let payer = null;
+  let payAnnual = 0;
+
+  if (annualM > annualF) {
+    payer = "M";
+    payAnnual = annualM - annualF;
+  } else if (annualF > annualM) {
+    payer = "F";
+    payAnnual = annualF - annualM;
   } else {
-    L6 = r0(0.12 * L3);
+    payer = null;
+    payAnnual = 0;
   }
 
-  const L7 = r0(Math.max(L5, L6));
+  const totalMonthly = roundDollar(payAnnual / 12);
 
-  return {
-    L1i, L2l, L3, L4, L5, L6, L7,
-    wsC,
-  };
-}
+  // Each parent’s own total monthly guideline obligation
+  const totalMonthlyM = roundDollar(annualM / 12);
+  const totalMonthlyF = roundDollar(annualF / 12);
 
-// Worksheet B Part 2 for ONE child (parenting-time adjustment)
-function computeWorksheetBPart2ForChild(mAnnualObl, fAnnualObl, daysM, daysF) {
-  const L1_M = r0(mAnnualObl);
-  const L1_F = r0(fAnnualObl);
-
-  const L2_M = daysM;
-  const L2_F = daysF;
-
-  const M_over110 = L2_M > 110;
-  const F_over110 = L2_F > 110;
-  const bothOver110 = M_over110 && F_over110;
-
-  // If not both parents > 110 days: lower-time parent pays full base obligation.
-  if (!bothOver110) {
-    if (L2_M > L2_F) {
-      // Mother/Parent A has more time; Parent B pays
-      return { line12_M: 0, line12_F: L1_F };
-    } else if (L2_F > L2_M) {
-      // Parent B has more time; Parent A pays
-      return { line12_M: L1_M, line12_F: 0 };
-    } else {
-      // Equal time but not both >110 – treat as offset of obligations
-      if (L1_M > L1_F) return { line12_M: L1_M - L1_F, line12_F: 0 };
-      if (L1_F > L1_M) return { line12_M: 0, line12_F: L1_F - L1_M };
-      return { line12_M: 0, line12_F: 0 };
-    }
-  }
-
-  // Both parents over 110 days → apply credit factor
-  const L4_M = 110;
-  const L4_F = 110;
-  const L5_M = Math.max(0, L2_M - L4_M);
-  const L5_F = Math.max(0, L2_F - L4_F);
-
-  const L6_M = CREDIT_FACTOR;
-  const L6_F = CREDIT_FACTOR;
-
-  const L7_M = L6_M * L5_M;
-  const L7_F = L6_F * L5_F;
-
-  const L8_M = r0(L7_M * L1_M);
-  const L8_F = r0(L7_F * L1_F);
-
-  const L9_M = r0(L1_M - L8_M);
-  const L9_F = r0(L1_F - L8_F);
-
-  const diff = Math.abs(L9_M - L9_F);
-  let L10_M = 0, L10_F = 0;
-  if (L9_M > L9_F) L10_M = diff;
-  if (L9_F > L9_M) L10_F = diff;
-
-  const L11_M = Math.min(L10_M, L1_M);
-  const L11_F = Math.min(L10_F, L1_F);
-
-  const L12_M = L11_M;
-  const L12_F = L11_F;
-
-  return {
-    line12_M: L12_M,
-    line12_F: L12_F,
-  };
-}
-
-// Main entry – this is what the wizard calls.
-export function runMontanaChildSupport(params) {
-  const {
-    mIncome = 0,
-    mDed = 0,
-    fIncome = 0,
-    fDed = 0,
-    numChildren = 1,
-    supplements = { childcare: 0, health: 0, med: 0, other: 0 },
-    parenting = [],
-  } = params || {};
-
-  const kids = Math.max(1, Math.min(8, numChildren || 1));
-
-  const totalSupp =
-    (supplements.childcare || 0) +
-    (supplements.health || 0) +
-    (supplements.med || 0) +
-    (supplements.other || 0);
-
-  // Worksheet A Part 1 – income & deductions
-  const mA1 = computeWorksheetAPart1(mIncome, mDed);
-  const fA1 = computeWorksheetAPart1(fIncome, fDed);
-
-  const combinedL7 = r0(mA1.L7 + fA1.L7);
-  let shareM = 0.5;
-  let shareF = 0.5;
-  if (combinedL7 > 0) {
-    shareM = mA1.L7 / combinedL7;
-    shareF = fA1.L7 / combinedL7;
-  }
-
-  const primaryTotal = PRIMARY_ALLOWANCE_BY_CHILD[kids] || PRIMARY_ALLOWANCE_BY_CHILD[8];
-  const solaFactor = SOLA_FACTOR_BY_CHILD[kids] || SOLA_FACTOR_BY_CHILD[8];
-
-  const mPrimaryShare = r0(shareM * primaryTotal);
-  const fPrimaryShare = r0(shareF * primaryTotal);
-
-  const mSuppShare = r0(shareM * totalSupp);
-  const fSuppShare = r0(shareF * totalSupp);
-
-  const mIncomeForSola = r0(Math.max(0, mA1.L5 - mPrimaryShare - mSuppShare));
-  const fIncomeForSola = r0(Math.max(0, fA1.L5 - fPrimaryShare - fSuppShare));
-
-  const mSOLA = r0(mIncomeForSola * solaFactor);
-  const fSOLA = r0(fIncomeForSola * solaFactor);
-
-  const totalAnnualSupportNeed = r0(primaryTotal + totalSupp + mSOLA + fSOLA);
-
-  const mGrossObl = r0(shareM * totalAnnualSupportNeed);
-  const fGrossObl = r0(shareF * totalAnnualSupportNeed);
-
-  const mCredit = mSuppShare;
-  const fCredit = fSuppShare;
-
-  const mAnnualAfterCredit = r0(Math.max(0, mGrossObl - mCredit));
-  const fAnnualAfterCredit = r0(Math.max(0, fGrossObl - fCredit));
-
-  // Per-child base obligations (equal split for now)
-  const mPerChildBase = mAnnualAfterCredit / kids;
-  const fPerChildBase = fAnnualAfterCredit / kids;
-
+  // Basic per-child breakdown (for display; not driving the worksheet math)
   const perChildResults = [];
-  let sumAnnualM = 0;
-  let sumAnnualF = 0;
-
-  for (let i = 0; i < kids; i++) {
-    const sched = parenting[i] || parenting[0] || { daysA: 255, daysB: 110 };
-    const daysM = sched.daysA;
-    const daysF = sched.daysB;
-
-    const b2 = computeWorksheetBPart2ForChild(mPerChildBase, fPerChildBase, daysM, daysF);
-
-    const childAnnualM = r0(b2.line12_M);
-    const childAnnualF = r0(b2.line12_F);
-
-    sumAnnualM += childAnnualM;
-    sumAnnualF += childAnnualF;
+  for (let i = 0; i < numChildren; i++) {
+    const p = parenting[i] || { daysA: 0, daysB: 0 };
+    const annualPerChildM = annualM / numChildren;
+    const annualPerChildF = annualF / numChildren;
 
     perChildResults.push({
       childIndex: i + 1,
-      annualM: childAnnualM,
-      annualF: childAnnualF,
-      monthlyM: r2(childAnnualM / 12),
-      monthlyF: r2(childAnnualF / 12),
-      daysM,
-      daysF,
+      annualM: annualPerChildM,
+      annualF: annualPerChildF,
+      monthlyM: annualPerChildM / 12,
+      monthlyF: annualPerChildF / 12,
+      daysM: p.daysA,
+      daysF: p.daysB,
     });
   }
 
-  const totalAnnualM = r0(sumAnnualM);
-  const totalAnnualF = r0(sumAnnualF);
-
-  const totalMonthlyM = r2(totalAnnualM / 12);
-  const totalMonthlyF = r2(totalAnnualF / 12);
-
-  let payer = null;
-  let monthlyTransfer = 0;
-
-  if (totalMonthlyM > totalMonthlyF) {
-    payer = "M";
-    monthlyTransfer = totalMonthlyM - totalMonthlyF;
-  } else if (totalMonthlyF > totalMonthlyM) {
-    payer = "F";
-    monthlyTransfer = totalMonthlyF - totalMonthlyM;
-  }
-
-  const annualTransfer = r0(monthlyTransfer * 12);
-  monthlyTransfer = r2(monthlyTransfer);
-
   return {
+    worksheetA,
     payer,
-    totalAnnual: annualTransfer,
-    totalMonthly: monthlyTransfer,
-    totalAnnualM,
-    totalAnnualF,
+    totalMonthly,
     totalMonthlyM,
     totalMonthlyF,
     perChildResults,
-    worksheetA: {
-      mother: {
-        ...mA1,
-        share: shareM,
-        primaryShare: mPrimaryShare,
-        suppShare: mSuppShare,
-        incomeForSola: mIncomeForSola,
-        sola: mSOLA,
-        grossObl: mGrossObl,
-        credit: mCredit,
-        annualAfterCredit: mAnnualAfterCredit,
-      },
-      father: {
-        ...fA1,
-        share: shareF,
-        primaryShare: fPrimaryShare,
-        suppShare: fSuppShare,
-        incomeForSola: fIncomeForSola,
-        sola: fSOLA,
-        grossObl: fGrossObl,
-        credit: fCredit,
-        annualAfterCredit: fAnnualAfterCredit,
-      },
-      primaryTotal,
-      totalSupp,
-      totalAnnualSupportNeed,
-    },
   };
 }
-
