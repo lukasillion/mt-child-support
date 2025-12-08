@@ -430,111 +430,109 @@
       `;
     }
 
-    calcBtn.addEventListener("click", async () => {
-      const parentAName = document.getElementById("parentAName").value || "Parent A";
-      const parentBName = document.getElementById("parentBName").value || "Parent B";
-      const numChildren = parseInt(document.getElementById("numChildren").value, 10) || 1;
+calcBtn.addEventListener("click", async () => {
+  const parentAName = document.getElementById("parentAName").value || "Parent A";
+  const parentBName = document.getElementById("parentBName").value || "Parent B";
 
-      const mIncome =
-        readNumber("mW2") +
-        readNumber("mSelf") +
-        readNumber("mOtherTax") +
-        readNumber("mOtherNonTax");
+  const numChildren = parseInt(document.getElementById("numChildren").value, 10) || 1;
 
-      const fIncome =
-        readNumber("fW2") +
-        readNumber("fSelf") +
-        readNumber("fOtherTax") +
-        readNumber("fOtherNonTax");
+  // INCOME (annual)
+  const grossMother =
+    readNumber("mW2") +
+    readNumber("mSelf") +
+    readNumber("mOtherTax") +
+    readNumber("mOtherNonTax");
 
-      const mDed =
-        readNumber("mFedTax") +
-        readNumber("mStateTax") +
-        readNumber("mSS") +
-        readNumber("mMedicare") +
-        readNumber("mRetire") +
-        readNumber("mUnion") +
-        readNumber("mOtherSupport") +
-        readNumber("mAlimony");
+  const grossFather =
+    readNumber("fW2") +
+    readNumber("fSelf") +
+    readNumber("fOtherTax") +
+    readNumber("fOtherNonTax");
 
-      const fDed =
-        readNumber("fFedTax") +
-        readNumber("fStateTax") +
-        readNumber("fSS") +
-        readNumber("fMedicare") +
-        readNumber("fRetire") +
-        readNumber("fUnion") +
-        readNumber("fOtherSupport") +
-        readNumber("fAlimony");
+  // DEDUCTIONS — allowed under CSSD rules
+  const otherSupportMother = readNumber("mOtherSupport");
+  const otherSupportFather = readNumber("fOtherSupport");
 
-      const childcare = readNumber("childcare");
-      const health = readNumber("health");
-      const med = readNumber("med");
-      const otherSupp = readNumber("otherSupp");
+  // CHILD COSTS
+  const childcare = readNumber("childcare");
+  const health = readNumber("health");
+  const med = readNumber("med");
+  const otherSupp = readNumber("otherSupp");
 
-      const daysA = readNumber("daysA");
-      const daysB = readNumber("daysB");
+  // PARENTING TIME
+  const daysA = readNumber("daysA");
+  const daysB = readNumber("daysB");
 
-      const parenting = Array.from({ length: numChildren }).map(() => ({
-        daysA,
-        daysB,
-      }));
+  const parenting = Array.from({ length: numChildren }).map(() => ({
+    daysA,
+    daysB,
+  }));
 
-      const calc = runMontanaChildSupport({
-        mIncome,
-        mDed,
-        fIncome,
-        fDed,
-        numChildren,
-        supplements: { childcare, health, med, other: otherSupp },
-        parenting,
-      });
+  // ⭐ NEW ENGINE CALL — EXACT FIELD NAMES REQUIRED
+  const calc = runMontanaChildSupport({
+    grossMother,
+    grossFather,
 
-      let payerName = "No transfer (equal obligations)";
-      if (calc.payer === "M") payerName = parentAName;
-      if (calc.payer === "F") payerName = parentBName;
+    otherSupportMother,
+    otherSupportFather,
 
-      resultBox.hidden = false;
-      resultBox.innerHTML = `
-        <h2>Estimate results</h2>
-        <p><strong>Estimated monthly transfer:</strong> $${fmt(calc.totalMonthly)} (${payerName} pays)</p>
-        <p>
-          <strong>${parentAName}</strong> total monthly obligation (all children): $${fmt(calc.totalMonthlyM)}<br>
-          <strong>${parentBName}</strong> total monthly obligation (all children): $${fmt(calc.totalMonthlyF)}
-        </p>
-        <h3>Per-child breakdown (annual &amp; monthly)</h3>
-        <ul>
-          ${calc.perChildResults
-            .map(
-              c => `
-              <li>
-                Child ${c.childIndex}: ${parentAName} – $${fmt(c.monthlyM)} / month, 
-                ${parentBName} – $${fmt(c.monthlyF)} / month
-                (days: ${c.daysM} with ${parentAName}, ${c.daysF} with ${parentBName})
-              </li>
-            `
-            )
-            .join("")}
-        </ul>
-        <p class="hint">
-          Next, the tool will attempt to fill in Montana Worksheets A/B/C using your numbers.
-          You can attach those to mediation packets or review with counsel.
-        </p>
-      `;
+    numChildren,
 
-      try {
-        await generateWorksheets(calc, {
-          parentAName,
-          parentBName,
-          numChildren,
-          supplements: { childcare, health, med, other: otherSupp },
-        });
-      } catch (err) {
-        console.warn("PDF generation failed or templates not ready:", err);
-        alert("Calculation completed. PDF worksheets could not be generated yet (templates may not be fully set up). The numbers above are still valid as an estimate.");
-      }
+    childcare,
+    health,
+    med,
+    otherSupp,
+
+    parenting,
+  });
+
+  // DETERMINE DISPLAY NAME FOR PAYER
+  let payerName = "No transfer (equal obligations)";
+  if (calc.payer === "M") payerName = parentAName;
+  if (calc.payer === "F") payerName = parentBName;
+
+  // UPDATE RESULTS
+  resultBox.hidden = false;
+  resultBox.innerHTML = `
+    <h2>Estimate results</h2>
+    <p><strong>Estimated monthly transfer:</strong> $${fmt(calc.totalMonthly)} (${payerName} pays)</p>
+    <p>
+      <strong>${parentAName}</strong> monthly obligation: $${fmt(calc.totalMonthlyM)}<br>
+      <strong>${parentBName}</strong> monthly obligation: $${fmt(calc.totalMonthlyF)}
+    </p>
+
+    <h3>Per-child breakdown</h3>
+    <ul>
+      ${calc.perChildResults
+        .map(
+          c => `
+            <li>
+              Child ${c.childIndex}: ${parentAName} – $${fmt(c.monthlyM)}, 
+              ${parentBName} – $${fmt(c.monthlyF)}
+              (days: ${c.daysM} with ${parentAName}, ${c.daysF} with ${parentBName})
+            </li>
+          `
+        )
+        .join("")}
+    </ul>
+  `;
+
+  // PDF GENERATION (Worksheet A/B/C)
+  try {
+    await generateWorksheets(calc, {
+      parentAName,
+      parentBName,
+      numChildren,
+      childcare,
+      health,
+      med,
+      otherSupp
     });
-
+  } catch (err) {
+    console.warn("PDF generation error:", err);
+    alert("Estimate completed. Worksheet PDFs were not generated (template missing or engine mismatch).");
+  }
+});
     // Initialize
     showStep(1);
   </script>
