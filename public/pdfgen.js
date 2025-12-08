@@ -1,186 +1,109 @@
 // public/pdfgen.js
-// Fills Montana CSSD Worksheet A using results from runMontanaChildSupport.
-// Assumes a fillable PDF template at /templates/WorksheetA-template.pdf
-// with field names like A_L1i_mother, A_L2l_father, etc.
+// Fills Worksheet A template using PDF-LIB.
+// Worksheets B/C will be added after engine finalization.
 
-import { PDFDocument } from "https://cdn.skypack.dev/pdf-lib@1.17.1";
+import {
+  PDFDocument,
+  StandardFonts,
+  rgb
+} from "https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.esm.js";
 
-function safeSetText(form, name, value) {
+// Helper to safely set text without crashing if a field is missing
+function safeSet(form, name, value) {
   try {
     const field = form.getTextField(name);
-    field.setText(
-      value === undefined || value === null || Number.isNaN(value)
-        ? ""
-        : String(value)
-    );
+    field.setText(value ?? "");
   } catch (e) {
-    console.warn("Missing field in Worksheet A template:", name);
+    console.warn("Missing PDF field:", name);
   }
 }
 
-// simple formatter for dollars
 function fmtDollar(x) {
-  const n = Number.isFinite(+x) ? +x : 0;
-  return n.toLocaleString(undefined, {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  });
+  const n = Number(x);
+  return Number.isFinite(n)
+    ? Math.round(n).toLocaleString()
+    : "";
 }
 
 /**
- * calc: result of runMontanaChildSupport(...)
- * meta: {
- *   parentAName: string,
- *   parentBName: string,
- *   numChildren: number,
- *   supplements: { childcare, health, med, other }
- * }
+ * calc = result of runMontanaChildSupport()
+ * meta = { parentAName, parentBName, numChildren, childcare, health, med, otherSupp }
  */
-export async function generateWorksheets(calc, meta = {}) {
-  const {
-    parentAName = "Parent A",
-    parentBName = "Parent B",
-    numChildren = 1,
-    supplements = {},
-  } = meta;
+export async function generateWorksheets(calc, meta) {
+  // Load Worksheet A template
+  const url = "/templates/WorksheetA-template.pdf";
+  const templateBytes = await fetch(url).then(r => r.arrayBuffer());
 
-  // For now we treat Parent A as "mother" and Parent B as "father" on the CSSD form.
-  // Later we can add a role selector (Mother/Father/Other) and remap accordingly.
-  const wsA = calc.worksheetA || {};
-  const mother = wsA.mother || {};
-  const father = wsA.father || {};
+  const pdfDoc = await PDFDocument.load(templateBytes);
+  const form = pdfDoc.getForm();
 
-  // Derive combined / share values if not already stored
-  const L7_mother = Number(mother.L7 || 0);
-  const L7_father = Number(father.L7 || 0);
-  const L7_combined = L7_mother + L7_father;
+  const A = calc.worksheetA;
+  const M = A.mother;
+  const F = A.father;
 
-  const shareM =
-    typeof mother.share === "number" && !Number.isNaN(mother.share)
-      ? mother.share
-      : L7_combined > 0
-      ? L7_mother / L7_combined
-      : 0.5;
+  // --- Parent names ---
+  safeSet(form, "A_parentA_name", meta.parentAName);
+  safeSet(form, "A_parentB_name", meta.parentBName);
 
-  const shareF =
-    typeof father.share === "number" && !Number.isNaN(father.share)
-      ? father.share
-      : 1 - shareM;
+  // --- Lines 1i – 13 ---
+  safeSet(form, "A_L1i_mother", fmtDollar(M.L1i));
+  safeSet(form, "A_L1i_father", fmtDollar(F.L1i));
 
-  const childrenCount =
-    numChildren || (Array.isArray(calc.perChildResults) ? calc.perChildResults.length : 1);
+  safeSet(form, "A_L2l_mother", fmtDollar(M.L2l));
+  safeSet(form, "A_L2l_father", fmtDollar(F.L2l));
 
-  const primaryAllowance = wsA.primaryTotal ?? wsA.primaryAllowance ?? 0;
-  const suppChildcare = supplements.childcare || 0;
-  const suppHealth = supplements.health || 0;
-  const suppMed = supplements.med || 0;
-  const suppOther = supplements.other || 0;
-  const suppTotal =
-    wsA.totalSupp ||
-    suppChildcare + suppHealth + suppMed + suppOther;
+  safeSet(form, "A_L3_mother", fmtDollar(M.L3));
+  safeSet(form, "A_L3_father", fmtDollar(F.L3));
 
-  const totalSupportNeed =
-    wsA.totalAnnualSupportNeed ||
-    primaryAllowance + suppTotal + (mother.sola || 0) + (father.sola || 0);
+  safeSet(form, "A_L4_mother", fmtDollar(M.L4));
+  safeSet(form, "A_L4_father", fmtDollar(F.L4));
 
-  // Decide who is payer for line 27
-  const payer = calc.payer; // "M" or "F" or null
-  const monthlyTransfer = calc.totalMonthly || 0;
+  safeSet(form, "A_L5_mother", fmtDollar(M.L5));
+  safeSet(form, "A_L5_father", fmtDollar(F.L5));
 
-  let L27_mother = "";
-  let L27_father = "";
-  if (payer === "M") {
-    L27_mother = fmtDollar(monthlyTransfer);
-  } else if (payer === "F") {
-    L27_father = fmtDollar(monthlyTransfer);
-  }
+  safeSet(form, "A_L6_mother", fmtDollar(M.L6));
+  safeSet(form, "A_L6_father", fmtDollar(F.L6));
 
-  // Load Worksheet A template PDF
-  const wsABytes = await fetch("/templates/WorksheetA-template.pdf").then((r) =>
-    r.arrayBuffer()
-  );
-  const wsADoc = await PDFDocument.load(wsABytes);
-  const formA = wsADoc.getForm();
+  safeSet(form, "A_L7_mother", fmtDollar(M.L7));
+  safeSet(form, "A_L7_father", fmtDollar(F.L7));
 
-  // --- HEADER / NAMES ---
-  safeSetText(formA, "A_parent_mother_name", parentAName);
-  safeSetText(formA, "A_parent_father_name", parentBName);
+  safeSet(form, "A_L8_combined", fmtDollar(A.L8));
 
-  // --- TOTAL INCOME & DEDUCTIONS (lines 1i, 2l) ---
-  safeSetText(formA, "A_L1i_mother", fmtDollar(mother.L1i));
-  safeSetText(formA, "A_L1i_father", fmtDollar(father.L1i));
-  safeSetText(formA, "A_L2l_mother", fmtDollar(mother.L2l));
-  safeSetText(formA, "A_L2l_father", fmtDollar(father.L2l));
+  safeSet(form, "A_L9_mother", (A.shareMother * 100).toFixed(1) + "%");
+  safeSet(form, "A_L9_father", (A.shareFather * 100).toFixed(1) + "%");
 
-  // --- LINES 3–7 ---
-  safeSetText(formA, "A_L3_mother", fmtDollar(mother.L3));
-  safeSetText(formA, "A_L3_father", fmtDollar(father.L3));
-  safeSetText(formA, "A_L4_mother", fmtDollar(mother.L4));
-  safeSetText(formA, "A_L4_father", fmtDollar(father.L4));
-  safeSetText(formA, "A_L5_mother", fmtDollar(mother.L5));
-  safeSetText(formA, "A_L5_father", fmtDollar(father.L5));
-  safeSetText(formA, "A_L6_mother", fmtDollar(mother.L6));
-  safeSetText(formA, "A_L6_father", fmtDollar(father.L6));
-  safeSetText(formA, "A_L7_mother", fmtDollar(mother.L7));
-  safeSetText(formA, "A_L7_father", fmtDollar(father.L7));
+  safeSet(form, "A_L10_children", String(meta.numChildren));
 
-  // --- LINE 8: combined L7 ---
-  safeSetText(formA, "A_L8_combined", fmtDollar(L7_combined));
+  safeSet(form, "A_L11_allowance", fmtDollar(A.primaryAllowance));
 
-  // --- LINE 9: shares (percentages) ---
-  safeSetText(formA, "A_share_mother", (shareM * 100).toFixed(1));
-  safeSetText(formA, "A_share_father", (shareF * 100).toFixed(1));
+  safeSet(form, "A_L12a_childcare", fmtDollar(A.L12a_childcare));
+  safeSet(form, "A_L12b_health", fmtDollar(A.L12b_health));
+  safeSet(form, "A_L12c_med", fmtDollar(A.L12c_unreimbursed_med));
+  safeSet(form, "A_L12d_other", fmtDollar(A.L12d_other));
+  safeSet(form, "A_L12e_total", fmtDollar(A.L12e_total));
 
-  // --- LINE 10: number of children ---
-  safeSetText(formA, "A_L10_children", String(childrenCount));
+  safeSet(form, "A_L13_total", fmtDollar(A.L13_total));
 
-  // --- LINE 11: primary allowance ---
-  safeSetText(formA, "A_L11_primary_allowance", fmtDollar(primaryAllowance));
+  // --- SOLA lines 15–24 ---
+  const MFIELDS = [
+    "L15", "L16", "L17",
+    "L18a", "L18b",
+    "L19", "L20", "L21",
+    "L22", "L23", "L24"
+  ];
 
-  // --- LINE 12: supplements ---
-  safeSetText(formA, "A_L12a_childcare", fmtDollar(suppChildcare));
-  safeSetText(formA, "A_L12b_health", fmtDollar(suppHealth));
-  safeSetText(formA, "A_L12c_unreimbursed_med", fmtDollar(suppMed));
-  safeSetText(formA, "A_L12d_other", fmtDollar(suppOther));
-  safeSetText(formA, "A_L12e_total", fmtDollar(suppTotal));
+  MFIELDS.forEach(line => {
+    safeSet(form, `A_${line}_mother`, M[line] == null ? "" : fmtDollar(M[line]));
+    safeSet(form, `A_${line}_father`, F[line] == null ? "" : fmtDollar(F[line]));
+  });
 
-  // --- LINE 13: primary + supplements ---
-  safeSetText(formA, "A_L13_total", fmtDollar(primaryAllowance + suppTotal));
+  // --- Finalize PDF ---
+  const pdfBytes = await pdfDoc.save();
 
-  // --- OPTIONAL: total support need, if you made that field ---
-  safeSetText(formA, "A_total_support_need", fmtDollar(totalSupportNeed));
-
-  // --- LINES 21–24 (we map our consolidated annualAfterCredit here if available) ---
-  // Note: our engine compresses SOLA steps, so we do NOT try to fill 15–20 exactly.
-  // We only populate the final annual obligations if the engine provides them.
-  if (mother.annualAfterCredit != null) {
-    safeSetText(formA, "A_L21_mother", fmtDollar(mother.annualAfterCredit));
-  }
-  if (father.annualAfterCredit != null) {
-    safeSetText(formA, "A_L21_father", fmtDollar(father.annualAfterCredit));
-  }
-
-  // If you want, you can also mirror annualAfterCredit into L24 fields:
-  safeSetText(formA, "A_L24_mother", fmtDollar(mother.annualAfterCredit));
-  safeSetText(formA, "A_L24_father", fmtDollar(father.annualAfterCredit));
-
-  // --- LINE 27: Monthly transfer obligation ---
-  safeSetText(formA, "A_L27_mother", L27_mother);
-  safeSetText(formA, "A_L27_father", L27_father);
-
-  // (You can add preparer name/date here later if you like)
-  // safeSetText(formA, "A_L28_preparer_name", "Montana Child Support Estimator");
-  // safeSetText(formA, "A_L28_preparer_date", new Date().toLocaleDateString());
-
-  // Save and prompt download
-  const filledBytes = await wsADoc.save();
-  const blob = new Blob([filledBytes], { type: "application/pdf" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "WorksheetA-Montana-Child-Support.pdf";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  // Trigger download
+  const blob = new Blob([pdfBytes], { type: "application/pdf" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "Montana-Worksheet-A.pdf";
+  link.click();
 }
