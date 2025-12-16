@@ -96,6 +96,41 @@ export async function generateWorksheets(calc, meta) {
     safeSet(form, `A_${line}_mother`, M[line] == null ? "" : fmtDollar(M[line]));
     safeSet(form, `A_${line}_father`, F[line] == null ? "" : fmtDollar(F[line]));
   });
+  const B1 = calc.worksheetBPart1;
+
+// Lines 1–4 + 6
+Object.keys(B1.L1).forEach(ch => {
+  safeSet(form, `B_L1_${ch}`, "X");
+  safeSet(form, `B_L2_${ch}`, fmtDollar(B1.L2[ch]));
+  safeSet(form, `B_L3_${ch}`, fmtDollar(B1.L3[ch]));
+  safeSet(form, `B_L4_${ch}`, fmtDollar(B1.L4[ch]));
+  safeSet(form, `B_L6_${ch}`, (B1.L6[ch] * 100).toFixed(2) + "%");
+});
+
+// Totals-only lines
+safeSet(form, "B_L5_total", fmtDollar(B1.L5_total));
+safeSet(form, "B_L7_total", fmtDollar(B1.L7_total));
+safeSet(form, "B_L8_total", fmtDollar(B1.L8_total));
+safeSet(form, "B_L9_total", fmtDollar(B1.L9_total));
+safeSet(form, "B_L11_total", fmtDollar(B1.L11_total));
+safeSet(form, "B_L16_total", fmtDollar(B1.L16_total));
+safeSet(form, "B_L17_total", fmtDollar(B1.L17_total));
+safeSet(form, "B_L18_total", fmtDollar(B1.L18_total));
+safeSet(form, "B_L20_total", fmtDollar(B1.L20_total));
+
+// Per-child parent lines
+Object.keys(B1.mother.L15).forEach(ch => {
+  safeSet(form, `B_L15_${ch}_mother`, fmtDollar(B1.mother.L15[ch]));
+  safeSet(form, `B_L24_${ch}_father`, fmtDollar(B1.father.L24[ch]));
+});
+  
+calc.worksheetBPart2.forEach(child => {
+  const ch = String(child.childIndex).padStart(2, "0");
+  Object.entries(child.lines).forEach(([line, vals]) => {
+    safeSet(form, `B2_CH${ch}_${line}_mother`, fmtDollar(vals.mother));
+    safeSet(form, `B2_CH${ch}_${line}_father`, fmtDollar(vals.father));
+  });
+});
 
   // --- Finalize PDF ---
   const pdfBytes = await pdfDoc.save();
