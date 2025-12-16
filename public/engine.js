@@ -278,6 +278,109 @@ export function runMontanaChildSupport(input) {
       daysF: p.daysB,
     });
   }
+// --------------------------------------------------
+// WORKSHEET B – PART 1 (Shared Parenting Allocation)
+// --------------------------------------------------
+const worksheetBPart1 = {
+  numChildren,
+  L1: {}, L2: {}, L3: {}, L4: {}, L6: {},
+  L5_total: 0,
+
+  // totals-only lines
+  L7_total: 0,
+  L8_total: 0,
+  L9_total: 0,
+  L11_total: 0,
+  L16_total: 0,
+  L17_total: 0,
+  L18_total: 0,
+  L20_total: 0,
+
+  mother: {
+    L10: {}, L12: {}, L13: {}, L14: {}, L15: {}
+  },
+  father: {
+    L19: {}, L21: {}, L22: {}, L23: {}, L24: {}
+  }
+};
+
+const childLabels = Array.from({ length: numChildren }, (_, i) =>
+  `CH${String(i + 1).padStart(2, "0")}`
+);
+
+// ---- Lines 1–4 ----
+const perChildPrimary = worksheetA.primaryAllowance / numChildren;
+const perChildSupp = worksheetA.totalSupplements / numChildren;
+
+childLabels.forEach(ch => {
+  worksheetBPart1.L1[ch] = 1;
+  worksheetBPart1.L2[ch] = perChildPrimary;
+  worksheetBPart1.L3[ch] = perChildSupp;
+  worksheetBPart1.L4[ch] = perChildPrimary + perChildSupp;
+});
+
+// ---- Line 5 (total only) ----
+worksheetBPart1.L5_total = childLabels.reduce(
+  (s, ch) => s + worksheetBPart1.L4[ch], 0
+);
+
+// ---- Line 6 ----
+childLabels.forEach(ch => {
+  worksheetBPart1.L6[ch] =
+    worksheetBPart1.L5_total > 0
+      ? worksheetBPart1.L4[ch] / worksheetBPart1.L5_total
+      : 0;
+});
+
+// ---- Mother side (7–15) ----
+worksheetBPart1.L7_total = worksheetA.mother.L22;
+worksheetBPart1.L8_total = worksheetA.mother.L20;
+worksheetBPart1.L9_total = worksheetBPart1.L7_total - worksheetBPart1.L8_total;
+worksheetBPart1.L11_total = worksheetA.mother.L20;
+
+childLabels.forEach(ch => {
+  worksheetBPart1.mother.L10[ch] =
+    worksheetBPart1.L6[ch] * worksheetBPart1.L9_total;
+
+  worksheetBPart1.mother.L12[ch] =
+    worksheetBPart1.L11_total / numChildren;
+
+  worksheetBPart1.mother.L13[ch] =
+    worksheetBPart1.mother.L10[ch] +
+    worksheetBPart1.mother.L12[ch];
+
+  worksheetBPart1.mother.L14[ch] =
+    worksheetA.mother.L23 / numChildren;
+
+  worksheetBPart1.mother.L15[ch] =
+    worksheetBPart1.mother.L13[ch] -
+    worksheetBPart1.mother.L14[ch];
+});
+
+// ---- Father side (16–24) ----
+worksheetBPart1.L16_total = worksheetA.father.L22;
+worksheetBPart1.L17_total = worksheetA.father.L20;
+worksheetBPart1.L18_total = worksheetBPart1.L16_total - worksheetBPart1.L17_total;
+worksheetBPart1.L20_total = worksheetA.father.L20;
+
+childLabels.forEach(ch => {
+  worksheetBPart1.father.L19[ch] =
+    worksheetBPart1.L6[ch] * worksheetBPart1.L18_total;
+
+  worksheetBPart1.father.L21[ch] =
+    worksheetBPart1.L20_total / numChildren;
+
+  worksheetBPart1.father.L22[ch] =
+    worksheetBPart1.father.L19[ch] +
+    worksheetBPart1.father.L21[ch];
+
+  worksheetBPart1.father.L23[ch] =
+    worksheetA.father.L23 / numChildren;
+
+  worksheetBPart1.father.L24[ch] =
+    worksheetBPart1.father.L22[ch] -
+    worksheetBPart1.father.L23[ch];
+});
 
   return {
     worksheetA,
