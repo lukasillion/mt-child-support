@@ -278,6 +278,31 @@ export function runMontanaChildSupport(input) {
       daysF: p.daysB,
     });
   }
+  // --------------------------------------------------
+// INTERNAL WORKSHEET C ADJUSTMENT (OTHER CHILDREN)
+// --------------------------------------------------
+
+// These come from your wizard inputs
+// (you already collect these)
+const motherOtherSupport = mOtherSupport || 0;
+const fatherOtherSupport = fOtherSupport || 0;
+
+// Adjust the obligations used downstream
+const adjustedMotherL24 = Math.max(
+  0,
+  worksheetA.mother.L24 - motherOtherSupport
+);
+
+const adjustedFatherL24 = Math.max(
+  0,
+  worksheetA.father.L24 - fatherOtherSupport
+);
+
+// IMPORTANT:
+// Override ONLY for downstream use (Worksheet B + final transfer)
+worksheetA.mother.adjustedL24 = adjustedMotherL24;
+worksheetA.father.adjustedL24 = adjustedFatherL24;
+
 // --------------------------------------------------
 // WORKSHEET B – PART 1 (Shared Parenting Allocation)
 // --------------------------------------------------
