@@ -1,20 +1,18 @@
 // public/pdfgen.js
-// Fills Worksheet A template using PDF-LIB.
-// Worksheets B/C will be added after engine finalization.
+// Fills Montana CSSD Worksheets A and B using pdf-lib.
+// Worksheets C/D/E are reference-only and intentionally not filled.
 
 import {
-  PDFDocument,
-  StandardFonts,
-  rgb
+  PDFDocument
 } from "https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.esm.js";
 
-// Helper to safely set text without crashing if a field is missing
+// Helper: set text safely if field exists
 function safeSet(form, name, value) {
   try {
     const field = form.getTextField(name);
     field.setText(value ?? "");
-  } catch (e) {
-    console.warn("Missing PDF field:", name);
+  } catch {
+    // Silent fail is intentional – templates may differ slightly
   }
 }
 
@@ -27,12 +25,11 @@ function fmtDollar(x) {
 
 /**
  * calc = result of runMontanaChildSupport()
- * meta = { parentAName, parentBName, numChildren, childcare, health, med, otherSupp }
+ * meta = { parentAName, parentBName, numChildren }
  */
 export async function generateWorksheets(calc, meta) {
-  // Load Worksheet A template
-  const url = "/templates/WorksheetA-template.pdf";
-  const templateBytes = await fetch(url).then(r => r.arrayBuffer());
+  const templateBytes = await fetch("/templates/WorksheetA-template.pdf")
+    .then(r => r.arrayBuffer());
 
   const pdfDoc = await PDFDocument.load(templateBytes);
   const form = pdfDoc.getForm();
@@ -41,11 +38,13 @@ export async function generateWorksheets(calc, meta) {
   const M = A.mother;
   const F = A.father;
 
-  // --- Parent names ---
+  // --------------------
+  // Worksheet A
+  // --------------------
+
   safeSet(form, "A_parentA_name", meta.parentAName);
   safeSet(form, "A_parentB_name", meta.parentBName);
 
-  // --- Lines 1i – 13 ---
   safeSet(form, "A_L1i_mother", fmtDollar(M.L1i));
   safeSet(form, "A_L1i_father", fmtDollar(F.L1i));
 
@@ -73,7 +72,6 @@ export async function generateWorksheets(calc, meta) {
   safeSet(form, "A_L9_father", (A.shareFather * 100).toFixed(1) + "%");
 
   safeSet(form, "A_L10_children", String(meta.numChildren));
-
   safeSet(form, "A_L11_allowance", fmtDollar(A.primaryAllowance));
 
   safeSet(form, "A_L12a_childcare", fmtDollar(A.L12a_childcare));
@@ -84,61 +82,64 @@ export async function generateWorksheets(calc, meta) {
 
   safeSet(form, "A_L13_total", fmtDollar(A.L13_total));
 
-  // --- SOLA lines 15–24 ---
-  const MFIELDS = [
-    "L15", "L16", "L17",
-    "L18a", "L18b",
-    "L19", "L20", "L21",
-    "L22", "L23", "L24"
-  ];
-
-  MFIELDS.forEach(line => {
+  [
+    "L15","L16","L17","L18a","L18b",
+    "L19","L20","L21","L22","L23","L24"
+  ].forEach(line => {
     safeSet(form, `A_${line}_mother`, M[line] == null ? "" : fmtDollar(M[line]));
     safeSet(form, `A_${line}_father`, F[line] == null ? "" : fmtDollar(F[line]));
   });
+
+  // --------------------
+  // Worksheet B – Part 1
+  // --------------------
+
   const B1 = calc.worksheetBPart1;
 
-// Lines 1–4 + 6
-Object.keys(B1.L1).forEach(ch => {
-  safeSet(form, `B_L1_${ch}`, "X");
-  safeSet(form, `B_L2_${ch}`, fmtDollar(B1.L2[ch]));
-  safeSet(form, `B_L3_${ch}`, fmtDollar(B1.L3[ch]));
-  safeSet(form, `B_L4_${ch}`, fmtDollar(B1.L4[ch]));
-  safeSet(form, `B_L6_${ch}`, (B1.L6[ch] * 100).toFixed(2) + "%");
-});
-
-// Totals-only lines
-safeSet(form, "B_L5_total", fmtDollar(B1.L5_total));
-safeSet(form, "B_L7_total", fmtDollar(B1.L7_total));
-safeSet(form, "B_L8_total", fmtDollar(B1.L8_total));
-safeSet(form, "B_L9_total", fmtDollar(B1.L9_total));
-safeSet(form, "B_L11_total", fmtDollar(B1.L11_total));
-safeSet(form, "B_L16_total", fmtDollar(B1.L16_total));
-safeSet(form, "B_L17_total", fmtDollar(B1.L17_total));
-safeSet(form, "B_L18_total", fmtDollar(B1.L18_total));
-safeSet(form, "B_L20_total", fmtDollar(B1.L20_total));
-
-// Per-child parent lines
-Object.keys(B1.mother.L15).forEach(ch => {
-  safeSet(form, `B_L15_${ch}_mother`, fmtDollar(B1.mother.L15[ch]));
-  safeSet(form, `B_L24_${ch}_father`, fmtDollar(B1.father.L24[ch]));
-});
-  
-calc.worksheetBPart2.forEach(child => {
-  const ch = String(child.childIndex).padStart(2, "0");
-  Object.entries(child.lines).forEach(([line, vals]) => {
-    safeSet(form, `B2_CH${ch}_${line}_mother`, fmtDollar(vals.mother));
-    safeSet(form, `B2_CH${ch}_${line}_father`, fmtDollar(vals.father));
+  Object.keys(B1.L1).forEach(ch => {
+    safeSet(form, `B_L1_${ch}`, "X");
+    safeSet(form, `B_L2_${ch}`, fmtDollar(B1.L2[ch]));
+    safeSet(form, `B_L3_${ch}`, fmtDollar(B1.L3[ch]));
+    safeSet(form, `B_L4_${ch}`, fmtDollar(B1.L4[ch]));
+    safeSet(form, `B_L6_${ch}`, (B1.L6[ch] * 100).toFixed(2) + "%");
   });
-});
 
-  // --- Finalize PDF ---
+  safeSet(form, "B_L5_total", fmtDollar(B1.L5_total));
+  safeSet(form, "B_L7_total", fmtDollar(B1.L7_total));
+  safeSet(form, "B_L8_total", fmtDollar(B1.L8_total));
+  safeSet(form, "B_L9_total", fmtDollar(B1.L9_total));
+  safeSet(form, "B_L11_total", fmtDollar(B1.L11_total));
+  safeSet(form, "B_L16_total", fmtDollar(B1.L16_total));
+  safeSet(form, "B_L17_total", fmtDollar(B1.L17_total));
+  safeSet(form, "B_L18_total", fmtDollar(B1.L18_total));
+  safeSet(form, "B_L20_total", fmtDollar(B1.L20_total));
+
+  Object.keys(B1.mother.L15).forEach(ch => {
+    safeSet(form, `B_L15_${ch}_mother`, fmtDollar(B1.mother.L15[ch]));
+    safeSet(form, `B_L24_${ch}_father`, fmtDollar(B1.father.L24[ch]));
+  });
+
+  // --------------------
+  // Worksheet B – Part 2
+  // --------------------
+
+  calc.worksheetBPart2.forEach(child => {
+    const ch = String(child.childIndex).padStart(2, "0");
+    Object.entries(child.lines).forEach(([line, vals]) => {
+      safeSet(form, `B2_CH${ch}_${line}_mother`, fmtDollar(vals.mother));
+      safeSet(form, `B2_CH${ch}_${line}_father`, fmtDollar(vals.father));
+    });
+  });
+
+  // --------------------
+  // Finalize
+  // --------------------
+
   const pdfBytes = await pdfDoc.save();
-
-  // Trigger download
   const blob = new Blob([pdfBytes], { type: "application/pdf" });
+
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.download = "Montana-Worksheet-A.pdf";
+  link.download = "Montana-CSSD-Worksheets-A-B.pdf";
   link.click();
 }
