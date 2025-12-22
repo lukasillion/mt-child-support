@@ -295,12 +295,77 @@ function fillWorksheetA(form, calc, meta) {
   setText(form, "A_L28_preparer_date", meta.preparerDate || "");
 }
 
-// -------------------------
-// Worksheet B filler (stub until we have your B field names)
-// -------------------------
-function fillWorksheetB(/* form, calc, meta */) {
-  // We will implement this once you paste the B field list from your template.
-  // This is the only missing piece to make it truly "comprehensive" for A+B.
+function fillWorksheetB(form, calc) {
+  const B1 = calc.worksheetBPart1;
+  const B2 = calc.worksheetBPart2 || [];
+
+  const numChildren = B1.numChildren || 0;
+
+  // Helper
+  const CH = i => `CH${String(i).padStart(2, "0")}`;
+
+  // -------------------------
+  // PART 1 — per-child columns
+  // -------------------------
+  for (let i = 1; i <= numChildren; i++) {
+    const ch = CH(i);
+
+    // Child header (just an indicator; use "X")
+    setText(form, `B1_${ch}`, "X");
+
+    setMoneyZero(form, `B1_L1_${ch}`, B1.L1[ch]);
+    setMoneyZero(form, `B1_L2_${ch}`, B1.L2[ch]);
+    setMoneyZero(form, `B1_L3_${ch}`, B1.L3[ch]);
+    setMoneyZero(form, `B1_L4_${ch}`, B1.L4[ch]);
+
+    // Line 6 is a percentage
+    setText(
+      form,
+      `B1_L6_${ch}`,
+      Number.isFinite(B1.L6[ch])
+        ? (B1.L6[ch] * 100).toFixed(2) + "%"
+        : "0%"
+    );
+
+    // Mother side (10–15)
+    setMoneyZero(form, `B1_L10_${ch}_mother`, B1.mother.L10[ch]);
+    setMoneyZero(form, `B1_L12_${ch}_mother`, B1.mother.L12[ch]);
+    setMoneyZero(form, `B1_L13_${ch}_mother`, B1.mother.L13[ch]);
+    setMoneyZero(form, `B1_L14_${ch}_mother`, B1.mother.L14[ch]);
+    setMoneyZero(form, `B1_L15_${ch}_mother`, B1.mother.L15[ch]);
+
+    // Father side (19–24)
+    setMoneyZero(form, `B1_L19_${ch}_father`, B1.father.L19[ch]);
+    setMoneyZero(form, `B1_L21_${ch}_father`, B1.father.L21[ch]);
+    setMoneyZero(form, `B1_L22_${ch}_father`, B1.father.L22[ch]);
+    setMoneyZero(form, `B1_L23_${ch}_father`, B1.father.L23[ch]);
+    setMoneyZero(form, `B1_L24_${ch}_father`, B1.father.L24[ch]);
+  }
+
+  // -------------------------
+  // PART 1 — totals-only lines
+  // -------------------------
+  setMoneyZero(form, "B_L5_total", B1.L5_total);
+  setMoneyZero(form, "B_L7_total", B1.L7_total);
+  setMoneyZero(form, "B_L8_total", B1.L8_total);
+  setMoneyZero(form, "B_L9_total", B1.L9_total);
+  setMoneyZero(form, "B_L11_total", B1.L11_total);
+  setMoneyZero(form, "B_L16_total", B1.L16_total);
+  setMoneyZero(form, "B_L17_total", B1.L17_total);
+  setMoneyZero(form, "B_L18_total", B1.L18_total);
+  setMoneyZero(form, "B_L20_total", B1.L20_total);
+
+  // -------------------------
+  // PART 2 — per-child blocks
+  // -------------------------
+  B2.forEach(child => {
+    const ch = CH(child.childIndex);
+
+    Object.entries(child.lines).forEach(([line, vals]) => {
+      setMoneyZero(form, `B2_${ch}_${line}_mother`, vals.mother);
+      setMoneyZero(form, `B2_${ch}_${line}_father`, vals.father);
+    });
+  });
 }
 
 // -------------------------
