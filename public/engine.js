@@ -1,9 +1,11 @@
 // public/engine.js
-// Core Montana Child Support engine for the wizard + Worksheet A/B.
-// - Tracks Worksheet A lines 1–24 explicitly (including SOLA 15–23)
-// - Adds internal “Worksheet C effect” adjustment (other supported children) without generating C/D/E PDFs
-// - Builds Worksheet B Part 1 + Part 2 objects for pdfgen.js using your existing PDF field naming
+// Core Montana Child Support engine for the wizard + Worksheet A.
+//
+// - Tracks Worksheet A lines 1a–1h, 1i, 2a–2l, 3–13, 15–24, and 27
+// - Uses the same input shape index.html already passes
+// - Still approximates sub-lines where the wizard doesn’t collect data
 
+// Formatter reused by UI
 export function fmt(n) {
   const num = Number.isFinite(+n) ? +n : 0;
   return num.toLocaleString(undefined, {
@@ -12,6 +14,7 @@ export function fmt(n) {
   });
 }
 
+// Core constants – from CSSD tables (Policy 404.2, current as of packet)
 const PERSONAL_ALLOWANCE = 20345.0; // per parent, annual
 
 const PRIMARY_ALLOWANCE_BY_CHILD = {
@@ -47,21 +50,41 @@ function clampInt(x, min, max) {
   return Math.max(min, Math.min(max, n));
 }
 
-// CSSD rounding: worksheet lines are typically nearest whole dollar
 function roundDollar(x) {
   return Math.round(toNum(x));
 }
 
-// cents rounding (only if you need it later)
-function roundCents(x) {
-  return Math.round(toNum(x) * 100) / 100;
+// Worksheet C minimum-support helper (WS-C table)
+function worksheetCMinimum(line3) {
+  const L3 = toNum(line3);
+  if (L3 <= 0) return 0;
+
+  const ratio = L3 / PERSONAL_ALLOWANCE;
+  let factor = 0;
+
+  if (ratio <= 0.25) factor = 0.0;
+  else if (ratio <= 0.31) factor = 0.01;
+  else if (ratio <= 0.38) factor = 0.02;
+  else if (ratio <= 0.45) factor = 0.03;
+  else if (ratio <= 0.52) factor = 0.04;
+  else if (ratio <= 0.59) factor = 0.05;
+  else if (ratio <= 0.66) factor = 0.06;
+  else if (ratio <= 0.73) factor = 0.07;
+  else if (ratio <= 0.80) factor = 0.08;
+  else if (ratio <= 0.87) factor = 0.09;
+  else if (ratio <= 0.94) factor = 0.10;
+  else factor = 0.11;
+
+  return roundDollar(L3 * factor);
 }
 
 /**
+ * Main engine entry point.
+ *
  * input = {
  *   grossMother,
  *   grossFather,
- *   otherSupportMother,
+ *   otherSupportMother, // ordered child support for other children (WS-A 2a)
  *   otherSupportFather,
  *   numChildren,
  *   childcare,
@@ -72,10 +95,10 @@ function roundCents(x) {
  * }
  */
 export function runMontanaChildSupport(input) {
-  const grossMother = toNum(input.grossMother);
+  const grossMother = toNum(input.grossMother); // this will be WS-A 1i for mother
   const grossFather = toNum(input.grossFather);
 
-  const otherSupportMother = toNum(input.otherSupportMother);
+  const otherSupportMother = toNum(input.otherSupportMother); // WS-A 2a
   const otherSupportFather = toNum(input.otherSupportFather);
 
   const numChildren = clampInt(input.numChildren ?? 1, 1, 8);
@@ -85,7 +108,6 @@ export function runMontanaChildSupport(input) {
   const med = toNum(input.med);
   const otherSupp = toNum(input.otherSupp);
 
-  // parenting entries are per child: { daysA, daysB }
   const parenting = Array.isArray(input.parenting) ? input.parenting : [];
 
   const primaryAllowance =
@@ -95,36 +117,155 @@ export function runMontanaChildSupport(input) {
 
   const totalSupplements = childcare + health + med + otherSupp;
 
-  // Worksheet A containers
+  const worksheetA = {
+    primaryAllowance,
+    totalSupplements,
+  };
+
   const mother = {};
   const father = {};
-  const worksheetA = { mother, father };
+  worksheetA.mother = mother;
+  worksheetA.father = father;
 
-  // --- Worksheet A lines 1–13 (your current implementation) ---
+  // -------------------------
+  // WS-A PART 1: INCOME (1a–1h, 1i)
+  // -------------------------
+  // For now, treat entire gross as wages (1a) and other sub-lines as 0.
+  // This keeps totals correct and avoids blanks, but does not try to
+  // reconstruct exact income mix without more wizard inputs.
 
-  mother.L1i = grossMother;
-  father.L1i = grossFather;
+  // Mother income
+  mother.L1a = grossMother;
+  mother.L1b = 0;
+  mother.L1c = 0;
+  mother.L1d = 0;
+  mother.L1e = 0; // imputed – not collected yet
+  mother.L1f = 0; // EITC – not collected yet
+  mother.L1g = 0;
+  mother.L1h = 0;
+  mother.L1i =
+    mother.L1a +
+    mother.L1b +
+    mother.L1c +
+    mother.L1d +
+    mother.L1e +
+    mother.L1f +
+    mother.L1g +
+    mother.L1h;
 
-  mother.L2l = otherSupportMother;
-  father.L2l = otherSupportFather;
+  // Father income
+  father.L1a = grossFather;
+  father.L1b = 0;
+  father.L1c = 0;
+  father.L1d = 0;
+  father.L1e = 0;
+  father.L1f = 0;
+  father.L1g = 0;
+  father.L1h = 0;
+  father.L1i =
+    father.L1a +
+    father.L1b +
+    father.L1c +
+    father.L1d +
+    father.L1e +
+    father.L1f +
+    father.L1g +
+    father.L1h;
 
+  // -------------------------
+  // WS-A PART 1: DEDUCTIONS (2a–2l) – limited to 2a for now
+  // -------------------------
+
+  // Mother: only 2a (other children support) is modeled; all others 0.
+  mother.L2a = otherSupportMother;
+  mother.L2b = 0;
+  mother.L2c = 0;
+  mother.L2d = 0;
+  mother.L2e = 0;
+  mother.L2f = 0;
+  mother.L2g = 0;
+  mother.L2h = 0;
+  mother.L2i = 0;
+  mother.L2j = 0;
+  mother.L2k = 0;
+  mother.L2l =
+    mother.L2a +
+    mother.L2b +
+    mother.L2c +
+    mother.L2d +
+    mother.L2e +
+    mother.L2f +
+    mother.L2g +
+    mother.L2h +
+    mother.L2i +
+    mother.L2j +
+    mother.L2k;
+
+  // Father
+  father.L2a = otherSupportFather;
+  father.L2b = 0;
+  father.L2c = 0;
+  father.L2d = 0;
+  father.L2e = 0;
+  father.L2f = 0;
+  father.L2g = 0;
+  father.L2h = 0;
+  father.L2i = 0;
+  father.L2j = 0;
+  father.L2k = 0;
+  father.L2l =
+    father.L2a +
+    father.L2b +
+    father.L2c +
+    father.L2d +
+    father.L2e +
+    father.L2f +
+    father.L2g +
+    father.L2h +
+    father.L2i +
+    father.L2j +
+    father.L2k;
+
+  worksheetA.L2l_mother = mother.L2l;
+  worksheetA.L2l_father = father.L2l;
+
+  // -------------------------
+  // Lines 3–7: income after deductions, personal allowance, minimums
+  // -------------------------
+
+  // 3: income after deductions
   mother.L3 = mother.L1i - mother.L2l;
   father.L3 = father.L1i - father.L2l;
 
-  mother.L4 = mother.L3 - PERSONAL_ALLOWANCE;
-  father.L4 = father.L3 - PERSONAL_ALLOWANCE;
+  // 4: personal allowance (from table 1)
+  mother.L4 = PERSONAL_ALLOWANCE;
+  father.L4 = PERSONAL_ALLOWANCE;
 
-  mother.L5 = Math.max(0, mother.L4);
-  father.L5 = Math.max(0, father.L4);
+  // 5: income available (3 – 4, floor at 0)
+  mother.L5 = Math.max(0, mother.L3 - mother.L4);
+  father.L5 = Math.max(0, father.L3 - father.L4);
 
-  mother.L6 = grossMother * 0.12;
-  father.L6 = grossFather * 0.12;
+  // 6: minimum support – WS-C if L5 <= 0, else 12% of line 3
+  if (mother.L5 <= 0) {
+    mother.L6 = worksheetCMinimum(mother.L3);
+  } else {
+    mother.L6 = roundDollar(mother.L3 * 0.12);
+  }
 
+  if (father.L5 <= 0) {
+    father.L6 = worksheetCMinimum(father.L3);
+  } else {
+    father.L6 = roundDollar(father.L3 * 0.12);
+  }
+
+  // 7: higher of lines 5 & 6
   mother.L7 = Math.max(mother.L5, mother.L6);
   father.L7 = Math.max(father.L5, father.L6);
 
+  // Combined line 7 & shares
   const L7_combined = mother.L7 + father.L7;
   worksheetA.L7_combined = L7_combined;
+  worksheetA.L8 = L7_combined; // line 8: combined income available
 
   const shareMother = L7_combined > 0 ? mother.L7 / L7_combined : 0.5;
   const shareFather = 1 - shareMother;
@@ -132,12 +273,14 @@ export function runMontanaChildSupport(input) {
   worksheetA.shareMother = shareMother;
   worksheetA.shareFather = shareFather;
 
-  worksheetA.L8 = L7_combined;
   worksheetA.L9_mother = shareMother;
   worksheetA.L9_father = shareFather;
 
-  worksheetA.L10_children = numChildren;
+  // -------------------------
+  // Lines 10–13: children, primary allowance, supplements
+  // -------------------------
 
+  worksheetA.L10_children = numChildren;
   worksheetA.L11_primary_allowance = primaryAllowance;
 
   worksheetA.L12a_childcare = childcare;
@@ -148,230 +291,110 @@ export function runMontanaChildSupport(input) {
 
   worksheetA.L13_total = primaryAllowance + totalSupplements;
 
-  // store for downstream Worksheet B
-  worksheetA.primaryAllowance = primaryAllowance;
-  worksheetA.totalSupplements = totalSupplements;
+  // -------------------------
+  // Lines 15–24: SOLA (WS-A Part 2)
+  // -------------------------
 
-  // --- Worksheet A SOLA section (your current implementation, fixed only for consistency) ---
   function computeSOLA(parent, share) {
     const out = {};
 
-    // CSSD rule: if line 6 > line 5, skip to line 21 and enter line 6 amount.
-    const skipSOLA = parent.L6 > parent.L5;
+    // Check line 14 condition: if line 6 > line 5, skip to 21 and use line 6.
+    const skipSola = parent.L6 > parent.L5;
 
-    if (skipSOLA) {
+    if (skipSola) {
       out.L15 = null;
       out.L16 = null;
-      out.L17 = null;
-      out.L18a = null;
-      out.L18b = null;
-      out.L19 = null;
-      out.L20 = 0; // if skipped, SOLA treated as 0 in this model
+      out.L17 = 0;
+      out.L18a = 0;
+      out.L18b = 0;
+      out.L19 = 0;
+      out.L20 = 0;
 
       out.L21 = parent.L6;
-      out.L22 = 0;         // credits not modeled here
-      out.L23 = out.L21 - out.L22;
-      out.L24 = roundDollar(out.L23);
+      out.L22 = Math.max(out.L21, parent.L6); // still compare to line 6
+      out.L23 = 0; // credit for expenses paid – not modeled yet
+      out.L24 = roundDollar(Math.max(0, out.L22 - out.L23));
       return out;
     }
 
-    out.L15 = parent.L7 - share * primaryAllowance - share * totalSupplements;
-    out.L16 = 0;
-    out.L17 = out.L15 - out.L16;
+    // 15: parent share of total (line 13 x line 9)
+    out.L15 = worksheetA.L13_total * share;
+
+    // 16: lower of line 15 and line 5
+    out.L16 = Math.min(out.L15, parent.L5);
+
+    // 17: income available for SOLA
+    out.L17 = Math.max(0, parent.L5 - out.L16);
+
+    // 18a/18b: WS-D & other – currently 0, can be wired later
     out.L18a = 0;
     out.L18b = 0;
-    out.L19 = out.L17 - (out.L18a + out.L18b);
 
-    out.L20 = out.L19 * solaFactor;
+    // 19: adjusted income for SOLA
+    out.L19 = Math.max(0, out.L17 - (out.L18a + out.L18b));
 
-    out.L21 = out.L20;
-    out.L22 = 0;
-    out.L23 = out.L21 - out.L22;
-    out.L24 = roundDollar(out.L23);
+    // 20: SOLA amount (WS-E)
+    out.L20 = roundDollar(out.L19 * solaFactor);
+
+    // 21: add line 16 and line 20
+    out.L21 = out.L16 + out.L20;
+
+    // 22: gross annual child support – higher of line 21 and line 6
+    out.L22 = Math.max(out.L21, parent.L6);
+
+    // 23: credit for expenses paid – we don’t know payer mix yet
+    out.L23 = 0;
+
+    // 24: annual support per parent
+    out.L24 = roundDollar(Math.max(0, out.L22 - out.L23));
 
     return out;
   }
 
-  Object.assign(mother, computeSOLA(mother, shareMother));
-  Object.assign(father, computeSOLA(father, shareFather));
+  const solaM = computeSOLA(mother, shareMother);
+  const solaF = computeSOLA(father, shareFather);
 
-  worksheetA.mother = mother;
-  worksheetA.father = father;
+  Object.assign(mother, solaM);
+  Object.assign(father, solaF);
 
-  // --------------------------------------------------
-  // INTERNAL "WORKSHEET C EFFECT" ADJUSTMENT
-  // (Other supported children / other court-ordered support)
-  //
-  // IMPORTANT:
-  // - We do NOT generate Worksheet C PDFs.
-  // - We DO adjust the annual obligations used downstream (Worksheet B + final transfer).
-  // --------------------------------------------------
-  worksheetA.mother.adjustedL24 = Math.max(0, (mother.L24 || 0) - otherSupportMother);
-  worksheetA.father.adjustedL24 = Math.max(0, (father.L24 || 0) - otherSupportFather);
+  // -------------------------
+  // Totals, transfer, per-child breakdown, line 27
+  // -------------------------
 
-  // Use adjusted obligations for payer + totals downstream
-  const annualM_adj = worksheetA.mother.adjustedL24;
-  const annualF_adj = worksheetA.father.adjustedL24;
+  const annualM = mother.L24 || 0;
+  const annualF = father.L24 || 0;
 
-  worksheetA.totalSupportAnnual = annualM_adj + annualF_adj;
+  worksheetA.totalSupportAnnual = annualM + annualF;
 
   let payer = null;
   let payAnnual = 0;
 
-  if (annualM_adj > annualF_adj) {
+  if (annualM > annualF) {
     payer = "M";
-    payAnnual = annualM_adj - annualF_adj;
-  } else if (annualF_adj > annualM_adj) {
+    payAnnual = annualM - annualF;
+  } else if (annualF > annualM) {
     payer = "F";
-    payAnnual = annualF_adj - annualM_adj;
+    payAnnual = annualF - annualM;
   } else {
     payer = null;
     payAnnual = 0;
   }
 
   const totalMonthly = roundDollar(payAnnual / 12);
-  const totalMonthlyM = roundDollar(annualM_adj / 12);
-  const totalMonthlyF = roundDollar(annualF_adj / 12);
+  const totalMonthlyM = roundDollar(annualM / 12);
+  const totalMonthlyF = roundDollar(annualF / 12);
 
-  // --------------------------------------------------
-  // WORKSHEET B – PART 1 (uses your field schema)
-  //
-  // NOTE:
-  // Your Worksheet A object does not currently track the exact "expense credits"
-  // that appear on some official worksheet variants. Because you want to keep
-  // your existing PDF fields, we fill the totals lines using the best-matching
-  // values you actually compute:
-  // - Use adjustedL24 as the annual obligation basis for B allocations
-  // - Use A.L20 as SOLA total (if not skipped)
-  // --------------------------------------------------
-  const worksheetBPart1 = {
-    numChildren,
-    L1: {}, L2: {}, L3: {}, L4: {}, L6: {},
-    L5_total: 0,
+  // Line 27: final monthly transfer, in column of paying parent
+  worksheetA.L27_mother = payer === "M" ? totalMonthly : 0;
+  worksheetA.L27_father = payer === "F" ? totalMonthly : 0;
 
-    // totals-only lines (you said only totals exist on 5,7,8,9,11,16,17,18,20)
-    L7_total: 0,
-    L8_total: 0,
-    L9_total: 0,
-    L11_total: 0,
-    L16_total: 0,
-    L17_total: 0,
-    L18_total: 0,
-    L20_total: 0,
-
-    mother: { L10: {}, L12: {}, L13: {}, L14: {}, L15: {} },
-    father: { L19: {}, L21: {}, L22: {}, L23: {}, L24: {} }
-  };
-
-  const childLabels = Array.from({ length: numChildren }, (_, i) =>
-    `CH${String(i + 1).padStart(2, "0")}`
-  );
-
-  // Part 1 lines 1–6 (even split per CSSD instruction if no breakdown)
-  const perChildPrimary = worksheetA.primaryAllowance / numChildren;
-  const perChildSupp = worksheetA.totalSupplements / numChildren;
-
-  childLabels.forEach(ch => {
-    worksheetBPart1.L1[ch] = 1;
-    worksheetBPart1.L2[ch] = perChildPrimary;
-    worksheetBPart1.L3[ch] = perChildSupp;
-    worksheetBPart1.L4[ch] = perChildPrimary + perChildSupp;
-  });
-
-  worksheetBPart1.L5_total = childLabels.reduce((s, ch) => s + worksheetBPart1.L4[ch], 0);
-
-  childLabels.forEach(ch => {
-    worksheetBPart1.L6[ch] =
-      worksheetBPart1.L5_total > 0 ? worksheetBPart1.L4[ch] / worksheetBPart1.L5_total : 0;
-  });
-
-  // Mother totals (lines 7/8/9/11 totals-only)
-  worksheetBPart1.L7_total = annualM_adj;                 // use adjusted annual obligation basis
-  worksheetBPart1.L8_total = mother.L20 || 0;             // SOLA total
-  worksheetBPart1.L9_total = worksheetBPart1.L7_total - worksheetBPart1.L8_total;
-  worksheetBPart1.L11_total = mother.L20 || 0;
-
-  // Father totals (lines 16/17/18/20 totals-only)
-  worksheetBPart1.L16_total = annualF_adj;
-  worksheetBPart1.L17_total = father.L20 || 0;
-  worksheetBPart1.L18_total = worksheetBPart1.L16_total - worksheetBPart1.L17_total;
-  worksheetBPart1.L20_total = father.L20 || 0;
-
-  // Per-child allocations (kept consistent with your PDF field plan)
-  childLabels.forEach(ch => {
-    // Mother side (10/12/13/14/15)
-    worksheetBPart1.mother.L10[ch] = worksheetBPart1.L6[ch] * worksheetBPart1.L9_total;
-    worksheetBPart1.mother.L12[ch] = worksheetBPart1.L11_total / numChildren;
-    worksheetBPart1.mother.L13[ch] = worksheetBPart1.mother.L10[ch] + worksheetBPart1.mother.L12[ch];
-
-    // If your Worksheet A PDF collects “expenses paid by mother”, wire it here later.
-    // For now, we keep it zero so it does not distort results.
-    worksheetBPart1.mother.L14[ch] = 0;
-
-    worksheetBPart1.mother.L15[ch] = worksheetBPart1.mother.L13[ch] - worksheetBPart1.mother.L14[ch];
-
-    // Father side (19/21/22/23/24)
-    worksheetBPart1.father.L19[ch] = worksheetBPart1.L6[ch] * worksheetBPart1.L18_total;
-    worksheetBPart1.father.L21[ch] = worksheetBPart1.L20_total / numChildren;
-    worksheetBPart1.father.L22[ch] = worksheetBPart1.father.L19[ch] + worksheetBPart1.father.L21[ch];
-
-    // Same comment as mother: if you collect “expenses paid by father”, wire here later.
-    worksheetBPart1.father.L23[ch] = 0;
-
-    worksheetBPart1.father.L24[ch] = worksheetBPart1.father.L22[ch] - worksheetBPart1.father.L23[ch];
-  });
-
-  // --------------------------------------------------
-  // WORKSHEET B – PART 2 (per-child blocks)
-  //
-  // Uses your field schema:
-  // B2_CH01_L1_mother, B2_CH01_L1_father, ... through L12
-  //
-  // IMPORTANT:
-  // You currently only collect total daysA/daysB per child (no “who pays which supplement”),
-  // so we keep Part 2 consistent with the per-child Part 1 base amounts.
-  // --------------------------------------------------
-  const worksheetBPart2 = [];
-
-  childLabels.forEach((ch, idx) => {
-    const p = parenting[idx] || { daysA: 0, daysB: 0 };
-    const daysM = toNum(p.daysA);
-    const daysF = toNum(p.daysB);
-
-    const pctM = daysM / 365;
-    const pctF = daysF / 365;
-
-    // Base per-child annual amounts from Part 1 end lines
-    const baseM = worksheetBPart1.mother.L15[ch];
-    const baseF = worksheetBPart1.father.L24[ch];
-
-    // Minimal consistent Part 2 structure:
-    // (If you want the full official Part 2 line math, paste your exact line instructions
-    // and we can map each line. Right now this will fill the fields consistently.)
-    const lines = {
-      L1: { mother: baseM, father: baseF },
-      L2: { mother: pctM, father: pctF },
-      L3: { mother: baseM * pctM, father: baseF * pctF },
-      L4: { mother: baseM - baseM * pctM, father: baseF - baseF * pctF },
-      L5: { mother: 0, father: 0 },
-      L6: { mother: 0, father: 0 },
-      L7: { mother: 0, father: 0 },
-      L8: { mother: 0, father: 0 },
-      L9: { mother: 0, father: 0 },
-      L10:{ mother: 0, father: 0 },
-      L11:{ mother: 0, father: 0 },
-      L12:{ mother: (baseF - baseM) / 12, father: (baseM - baseF) / 12 }
-    };
-
-    worksheetBPart2.push({ childIndex: idx + 1, lines });
-  });
-
-  // Per-child display results based on adjusted obligations
+  // Per-child breakdown (simple split; WS-B shared-parenting refinements
+  // happen in Worksheet B logic, not here)
   const perChildResults = [];
   for (let i = 0; i < numChildren; i++) {
     const p = parenting[i] || { daysA: 0, daysB: 0 };
-    const annualPerChildM = annualM_adj / numChildren;
-    const annualPerChildF = annualF_adj / numChildren;
+    const annualPerChildM = annualM / numChildren;
+    const annualPerChildF = annualF / numChildren;
 
     perChildResults.push({
       childIndex: i + 1,
@@ -386,8 +409,6 @@ export function runMontanaChildSupport(input) {
 
   return {
     worksheetA,
-    worksheetBPart1,
-    worksheetBPart2,
     payer,
     totalMonthly,
     totalMonthlyM,
